@@ -1,0 +1,19 @@
+from datetime import datetime, timezone
+from sqlalchemy import DateTime
+from sqlalchemy.orm import Mapped, mapped_column
+from app.core.database import Base
+
+
+class TimestampMixin:
+    """Mixin que agrega campos automáticos de auditoría temporal con zona horaria UTC."""
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )

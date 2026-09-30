@@ -1,0 +1,51 @@
+:root {
+  /* Paleta Contable Empresarial Sobria */
+  --color-primary: #1e3a8a;          /* Azul corporativo formal */
+  --color-primary-hover: #1e40af;
+  --color-primary-light: #eff6ff;
+  
+  --color-secondary: #3b82f6;        /* Azul de acento */
+  --color-sidebar: #0f172a;          /* Slate 900 oscuro sobrio */
+  --color-sidebar-hover: #1e293b;    /* Slate 800 */
+  --color-sidebar-active: #2563eb;
+  --color-sidebar-text: #94a3b8;
+  --color-sidebar-text-active: #ffffff;
+  
+  --color-bg-app: #f8fafc;           /* Fondo gris neutro suave */
+  --color-bg-card: #ffffff;          /* Blanco puro */
+  --color-border: #e2e8f0;           /* Bordes sutiles */
+  --color-border-focus: #3b82f6;
+  
+  --color-text-main: #0f172a;        /* Texto principal */
+  --color-text-muted: #64748b;       /* Texto secundario */
+  --color-text-light: #94a3b8;
+  
+  /* Estados Fiscales y Badges */
+  --color-success-bg: #ecfdf5;
+  --color-success-text: #065f46;
+  --color-success-border: #a7f3d0;
+  
+  --color-warning-bg: #fffbeb;
+  --color-warning-text: #92400e;
+  --color-warning-border: #fde68a;
+  
+  --color-danger-bg: #fef2f2;
+  --color-danger-text: #991b1b;
+  --color-danger-border: #fecaca;
+  
+  --color-info-bg: #eff6ff;
+  --color-info-text: #1e40af;
+  --color-info-border: #bfdbfe;
+
+  /* Espaciado y Sombras */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+  --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  --transition-fast: 0.15s ease;
+}

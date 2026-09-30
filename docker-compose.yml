@@ -1,0 +1,95 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sunat_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sunat_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sunat_secure_password_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-sunat_consultas_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sunat_user} -d ${POSTGRES_DB:-sunat_consultas_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - sunat_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sunat_backend
+    restart: always
+    environment:
+      - POSTGRES_SERVER=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-sunat_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-sunat_secure_password_dev}
+      - POSTGRES_DB=${POSTGRES_DB:-sunat_consultas_db}
+      - SECRET_KEY=${SECRET_KEY}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DEBUG=${DEBUG:-True}
+      - API_V1_STR=${API_V1_STR:-/api/v1}
+      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS:-["http://localhost:5173","http://127.0.0.1:5173","http://localhost:3000"]}
+      - SEED_ADMIN_EMAIL=${SEED_ADMIN_EMAIL:-admin@sistema.local}
+      - SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD:-AdminDev2026!}
+      - SEED_CONTADOR_PASSWORD=${SEED_CONTADOR_PASSWORD:-ContadorDev2026!}
+      - SUNAT_AUTH_BASE_URL=${SUNAT_AUTH_BASE_URL}
+      - SUNAT_API_BASE_URL=${SUNAT_API_BASE_URL}
+      - SUNAT_AUTH_SCOPE=${SUNAT_AUTH_SCOPE}
+      - SUNAT_TIMEOUT_SECONDS=${SUNAT_TIMEOUT_SECONDS:-30.0}
+      - SUNAT_DAIRA_CLIENT_ID=${SUNAT_DAIRA_CLIENT_ID:-}
+      - SUNAT_DAIRA_CLIENT_SECRET=${SUNAT_DAIRA_CLIENT_SECRET:-}
+      - SUNAT_DAIRA_SOL_USER=${SUNAT_DAIRA_SOL_USER:-}
+      - SUNAT_DAIRA_SOL_PASSWORD=${SUNAT_DAIRA_SOL_PASSWORD:-}
+      - SUNAT_JJD_CLIENT_ID=${SUNAT_JJD_CLIENT_ID:-}
+      - SUNAT_JJD_CLIENT_SECRET=${SUNAT_JJD_CLIENT_SECRET:-}
+      - SUNAT_JJD_SOL_USER=${SUNAT_JJD_SOL_USER:-}
+      - SUNAT_JJD_SOL_PASSWORD=${SUNAT_JJD_SOL_PASSWORD:-}
+      - SUNAT_MAX_CONCURRENCY=${SUNAT_MAX_CONCURRENCY:-5}
+      - SUNAT_REQUEST_TIMEOUT=${SUNAT_REQUEST_TIMEOUT:-30.0}
+      - SUNAT_RETRY_MAX_ATTEMPTS=${SUNAT_RETRY_MAX_ATTEMPTS:-1}
+      - SUNAT_RETRY_BASE_DELAY=${SUNAT_RETRY_BASE_DELAY:-1.0}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - sunat_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sunat_frontend
+    restart: always
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000/api/v1
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - sunat_network
+
+volumes:
+  postgres_data:
+  uploads_data:
+
+networks:
+  sunat_network:
+    driver: bridge
