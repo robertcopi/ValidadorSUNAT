@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { ShieldCheck, LogIn, AlertCircle } from 'lucide-react';
+import { AlertCircle, LogIn } from 'lucide-react';
+import { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import logoEmpresa from '../assets/logo-empresa.png';
 import { PasswordInput } from '../components/common/PasswordInput';
+import { useAuth } from '../context/AuthContext';
 
 export const Login = () => {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,18 +21,18 @@ export const Login = () => {
     e.preventDefault();
     setError('');
 
-    if (!username.trim() || !password) {
+    if (!email.trim() || !password) {
       setError('Por favor complete todos los campos.');
       return;
     }
 
     setLoading(true);
     try {
-      await login(username.trim(), password);
+      await login(email.trim(), password);
       navigate(from, { replace: true });
     } catch (err) {
       const msg = err.response?.data?.detail || 'Error al iniciar sesión. Verifique sus credenciales.';
-      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -41,8 +42,12 @@ export const Login = () => {
     <div className="login-container">
       <div className="login-card">
         <div className="login-header">
-          <div className="login-logo">
-            <ShieldCheck size={28} />
+          <div className="login-logo-container">
+            <img
+              src={logoEmpresa}
+              alt="Logo Corporativo JD"
+              className="login-corporate-logo"
+            />
           </div>
           <h1 className="login-title">Validador SUNAT</h1>
           <p className="login-subtitle">Sistema de Validación de Comprobantes Electrónicos</p>
@@ -59,16 +64,16 @@ export const Login = () => {
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label" htmlFor="username">
-              Nombre de Usuario
+            <label className="form-label" htmlFor="email">
+              Correo o usuario
             </label>
             <input
-              id="username"
+              id="email"
               type="text"
               className="form-input"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="robert"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin o ejemplo@sistema.local"
               autoComplete="username"
               required
             />
@@ -94,12 +99,7 @@ export const Login = () => {
           </button>
         </form>
 
-        <div className="login-info-box">
-          <strong>Acceso al Sistema:</strong><br />
-          • Admin: <code>admin</code> (AdminDev2026!)<br />
-          • DAIRA: <code>contador1.daira</code> o <code>robert</code> (ContadorDev2026!)<br />
-          • JJD MAR: <code>contador1.jjdmar</code> (ContadorDev2026!)
-        </div>
+
       </div>
     </div>
   );

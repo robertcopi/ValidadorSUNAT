@@ -15,6 +15,7 @@ Cumple estrictamente con las directrices de Fase 3:
 import io
 import re
 import datetime
+import zipfile
 from decimal import Decimal, InvalidOperation
 from typing import Dict, List, Optional, Tuple, Any
 
@@ -70,10 +71,15 @@ class ExcelParserService:
     @staticmethod
     def validar_archivo(file_bytes: bytes, filename: str) -> None:
         """
-        Valida que el archivo tenga extensión .xlsx, no exceda el tamaño configurado
-        y posea la estructura de un archivo Excel válido.
+        Valida que el archivo:
+        1. Tenga extensión .xlsx
+        2. No exceda el tamaño máximo configurado
+        3. Tenga magic bytes de archivo ZIP (PK\\x03\\x04)
+        4. No sea una bomba de descompresión (Zip Bomb / Resource Exhaustion)
+        5. No contenga macros ejecutables (VBA) ni rutas con Path Traversal
         """
-        if not filename.lower().endswith(".xlsx"):
+        clean_name = filename.strip()
+        if not clean_name.lower().endswith(".xlsx"):
             raise ExcelParserException(
                 message=f"Formato no soportado. El archivo '{filename}' debe ser un libro de Excel (.xlsx)."
             )
@@ -86,6 +92,56 @@ class ExcelParserService:
 
         if len(file_bytes) == 0:
             raise ExcelParserException(message="El archivo subido está vacío.")
+
+        # Validación de Magic Bytes de archivo ZIP / OOXML
+        if not file_bytes.startswith(b"PK\x03\x04"):
+            raise ExcelParserException(
+                message="El archivo no posee la estructura de compresión válida de un libro Excel (.xlsx)."
+            )
+
+        # Inspección de integridad y protección contra Zip Bombs
+        try:
+            with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as zf:
+                infolist = zf.infolist()
+                if len(infolist) > settings.MAX_EXCEL_ZIP_ENTRIES:
+                    raise ExcelParserException(
+                        message=f"El archivo contiene demasiadas entradas internas ({len(infolist)}). Límite de seguridad: {settings.MAX_EXCEL_ZIP_ENTRIES}."
+                    )
+
+                total_uncompressed = 0
+                max_uncompressed_bytes = settings.MAX_EXCEL_UNCOMPRESSED_MB * 1024 * 1024
+
+                for info in infolist:
+                    # Protección contra Path Traversal dentro del archivo comprimido
+                    if ".." in info.filename or info.filename.startswith("/") or info.filename.startswith("\\"):
+                        raise ExcelParserException(
+                            message="El archivo contiene nombres de ruta internos inválidos o sospechosos."
+                        )
+
+                    # Detección y rechazo de macros o binarios embebidos
+                    lower_filename = info.filename.lower()
+                    if lower_filename.endswith((".exe", ".vbs", ".bat", ".cmd", ".dll", ".scr", ".ps1")) or "vbaproject" in lower_filename:
+                        raise ExcelParserException(
+                            message="El archivo contiene macros o componentes ejecutables no autorizados."
+                        )
+
+                    total_uncompressed += info.file_size
+                    if total_uncompressed > max_uncompressed_bytes:
+                        raise ExcelParserException(
+                            message=f"El tamaño descomprimido del archivo supera el límite de seguridad permitido ({settings.MAX_EXCEL_UNCOMPRESSED_MB}MB)."
+                        )
+
+                # Verificar ratio de compresión
+                if len(file_bytes) > 0:
+                    ratio = total_uncompressed / len(file_bytes)
+                    if ratio > settings.MAX_EXCEL_COMPRESSION_RATIO:
+                        raise ExcelParserException(
+                            message="El archivo presenta un ratio de compresión anómalo que representa un riesgo de denegación de servicio."
+                        )
+
+        except zipfile.BadZipFile:
+            raise ExcelParserException(message="El archivo comprimido está dañado o no es un libro Excel válido.")
+
 
     @staticmethod
     def resolver_celdas_combinadas(sheet: Worksheet, max_scan_row: int = 35) -> Dict[Tuple[int, int], Any]:
@@ -339,6 +395,15 @@ class ExcelParserService:
         sheet = wb.active
         if sheet is None:
             raise ExcelParserException(message="El archivo Excel no contiene hojas de cálculo activas.")
+
+        if (sheet.max_row or 0) > settings.MAX_EXCEL_ROWS:
+            raise ExcelParserException(
+                message=f"El archivo contiene demasiadas filas ({sheet.max_row}). Límite de seguridad: {settings.MAX_EXCEL_ROWS}."
+            )
+        if (sheet.max_column or 0) > settings.MAX_EXCEL_COLS:
+            raise ExcelParserException(
+                message=f"El archivo contiene demasiadas columnas ({sheet.max_column}). Límite de seguridad: {settings.MAX_EXCEL_COLS}."
+            )
 
         max_scan = min(sheet.max_row or 1, 35)
         fila_inicio, fila_fin, mapping = cls.detectar_encabezados(sheet, max_scan_row=max_scan)

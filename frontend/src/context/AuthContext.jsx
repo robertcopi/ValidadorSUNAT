@@ -33,13 +33,8 @@ export const AuthProvider = ({ children }) => {
     verifySession();
   }, []);
 
-  const login = async (username, password) => {
-    const cleanUsername = username?.trim() || '';
-    const response = await axiosClient.post('/auth/login', {
-      username: cleanUsername,
-      email: cleanUsername,
-      password,
-    });
+  const login = async (email, password) => {
+    const response = await axiosClient.post('/auth/login', { email, password });
     const { access_token, user: userData } = response.data;
 
     localStorage.setItem('token', access_token);

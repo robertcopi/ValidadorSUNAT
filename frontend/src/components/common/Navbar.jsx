@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Building2, AlertTriangle } from 'lucide-react';
+import logoEmpresa from '../../assets/logo-empresa.png';
 
 export const Navbar = () => {
   const { user } = useAuth();
@@ -13,10 +14,17 @@ export const Navbar = () => {
 
   return (
     <header className="navbar">
-      <div className="navbar-tenant-badge">
-        <Building2 size={18} color="var(--color-primary)" />
-        <span className="tenant-name">{empresaNombre}</span>
-        <span className="tenant-ruc">RUC: {empresaRuc}</span>
+      <div className="navbar-brand-group">
+        <img
+          src={logoEmpresa}
+          alt="Logo Corporativo JD"
+          className="navbar-corporate-logo"
+        />
+        <div className="navbar-tenant-badge">
+          <Building2 size={16} color="var(--color-primary)" />
+          <span className="tenant-name">{empresaNombre}</span>
+          <span className="tenant-ruc">RUC: {empresaRuc}</span>
+        </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -54,11 +62,6 @@ export const Navbar = () => {
           </div>
           <div className="user-details">
             <span className="user-name">{user?.nombre_completo}</span>
-            {user?.username && (
-              <span style={{ fontSize: '0.725rem', color: 'var(--color-text-muted)', lineHeight: '1' }}>
-                @{user.username}
-              </span>
-            )}
             <span className="user-role-badge">{user?.rol}</span>
           </div>
         </Link>

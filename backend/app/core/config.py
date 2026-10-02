@@ -65,6 +65,21 @@ class Settings(BaseSettings):
     MAX_MASSIVE_ITEMS: int = 1000
     SUNAT_REQUEST_DELAY_MS: int = 0
     SUNAT_MASSIVE_MAX_RETRIES: int = 3
+
+    # Límites de Seguridad para Carga de Archivos Excel / Zip Bombs
+    MAX_EXCEL_ZIP_ENTRIES: int = 500
+    MAX_EXCEL_UNCOMPRESSED_MB: int = 50
+    MAX_EXCEL_COMPRESSION_RATIO: float = 25.0
+    MAX_EXCEL_ROWS: int = 25000
+    MAX_EXCEL_COLS: int = 60
+
+    # Rate Limiting Configurable
+    RATE_LIMIT_LOGIN_MAX_ATTEMPTS: int = 5
+    RATE_LIMIT_LOGIN_WINDOW_SECONDS: int = 300
+    RATE_LIMIT_UPLOAD_MAX: int = 20
+    RATE_LIMIT_UPLOAD_WINDOW_SECONDS: int = 60
+    RATE_LIMIT_EXPORT_MAX: int = 30
+    RATE_LIMIT_EXPORT_WINDOW_SECONDS: int = 60
     
     # CORS
     BACKEND_CORS_ORIGINS: Union[List[str], str] = [
@@ -93,3 +108,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+

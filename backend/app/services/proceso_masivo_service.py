@@ -54,24 +54,30 @@ class ProcesoMasivoService:
     """
     Servicio de orquestación y persistencia de Procesos Masivos de Validación SUNAT.
     
-    Cumple estrictamente con todos los requisitos de Fase 4:
-    1. Estados internos unificados: VALIDO, NO_VALIDO, OBSERVADO, ERROR (reutiliza interpretar_respuesta_sunat).
-    2. Ejecución 100% asíncrona desacoplada del request HTTP (background worker).
-    3. Persistencia física individual en PostgreSQL (procesos_masivos y proceso_masivo_items).
-    4. Concurrencia controlada mediante asyncio.Semaphore(settings.SUNAT_MAX_CONCURRENCY).
-    5. Delay configurable inter-request (settings.SUNAT_REQUEST_DELAY_MS).
-    6. Retries inteligentes exclusivos para fallos técnicos transitorios (timeout, network, 429, 500-504).
-    7. Tratamiento de HTTP 429 con respeto a Retry-After y exponential backoff.
-    8. Aislamiento de fallos individuales (un comprobante fallido no cancela el lote).
-    9. Reintento selectivo de errores técnicos (POST .../reintentar-errores).
-    10. Idempotencia mediante Idempotency-Key.
-    11. Multitenancy estricto basado en contexto JWT.
-    12. Recuperación automática al reiniciar el backend de procesos PROCESANDO/PENDIENTE.
-    13. Paginación de items y listado general.
-    14. Auditoría en consultas_cpe para cada llamada real a SUNAT.
-    15. Transacciones cortas: nunca mantiene transacción DB abierta durante la llamada HTTP a SUNAT.
-    16. Cantidad dinámica: cero dependencias de 220, límite técnico configurable MAX_MASSIVE_ITEMS.
+    1. Estados internos unificados: VALIDO, NO_VALIDO, OBSERVADO, ERROR.
+    2. Concurrencia controlada mediante asyncio.Semaphore.
+    3. Delay configurable inter-request.
+    4. Retries inteligentes exclusivos para fallos técnicos transitorios.
+    5. Aislamiento de fallos individuales.
+    6. Multitenancy estricto basado en contexto JWT.
+    7. Paginación de items y listado general.
     """
+
+    @staticmethod
+    def sanitize_formula(val: Any) -> Any:
+        """Protección contra Excel Formula Injection sin alterar valores numéricos legítimos."""
+        if val is None:
+            return ""
+        if isinstance(val, (int, float, Decimal)):
+            return val
+        s = str(val).strip()
+        if s and s[0] in ("=", "+", "-", "@"):
+            try:
+                float(s)
+                return val
+            except ValueError:
+                return f"'{s}"
+        return val
 
     def __init__(self):
         # Permite inyectar sessionmaker alternativo en tests (ej. SQLite en memoria)
@@ -850,20 +856,8 @@ class ProcesoMasivoService:
         fill_observado = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
         fill_error = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
 
-        def sanitize_formula(val: Any) -> Any:
-            """Protección contra Excel Formula Injection sin alterar valores numéricos legítimos."""
-            if val is None:
-                return ""
-            if isinstance(val, (int, float, Decimal)):
-                return val
-            s = str(val).strip()
-            if s and s[0] in ("=", "+", "-", "@"):
-                try:
-                    float(s)
-                    return val
-                except ValueError:
-                    return f"'{s}"
-            return val
+        # Sanitizar usando método de clase
+        sanitize_formula = self.sanitize_formula
 
         # Título
         ws.cell(row=1, column=1, value="SISTEMA DE VALIDACIÓN DE COMPROBANTES SUNAT - REPORTE OFICIAL").font = font_title

@@ -1,8 +1,10 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.config import settings
+from app.core.rate_limit import upload_rate_limiter
 from app.api.deps import get_current_user, get_current_empresa, require_role
 from app.models.usuario import Usuario
 from app.models.empresa import Empresa
@@ -10,6 +12,7 @@ from app.schemas.importacion import ImportacionPreviewResponse
 from app.schemas.proceso_masivo import CrearProcesoMasivoRequest, ProcesoMasivoResponse
 from app.services.excel_parser_service import ExcelParserService, ExcelParserException
 from app.services.proceso_masivo_service import proceso_masivo_service, ProcesoMasivoException
+from app.services.audit_service import audit_service
 
 router = APIRouter()
 
@@ -28,35 +31,95 @@ router = APIRouter()
     """
 )
 async def preview_importacion_excel(
+    request: Request,
     archivo: UploadFile = File(..., description="Archivo Excel (.xlsx) del Registro de Compras"),
     current_user: Usuario = Depends(get_current_user),
     empresa_actual: Empresa = Depends(get_current_empresa),
+    db: AsyncSession = Depends(get_db),
 ) -> ImportacionPreviewResponse:
     """
     Endpoint para carga y previsualización de comprobantes desde Excel.
+    Aplica rate limiting y streaming con límite de tamaño para mitigar DoS.
     """
-    if not archivo.filename or not archivo.filename.lower().endswith(".xlsx"):
+    client_ip = request.client.host if request.client else "unknown"
+    rate_key = f"{client_ip}:{current_user.id}"
+
+    if upload_rate_limiter.is_rate_limited(rate_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Ha excedido el límite de cargas de archivo permitidas por minuto. Por favor espere."
+        )
+
+    clean_filename = (archivo.filename or "").strip()
+    if not clean_filename or not clean_filename.lower().endswith(".xlsx"):
+        await audit_service.registrar_evento(
+            db=db,
+            accion="ARCHIVO_RECHAZADO",
+            entidad="importacion",
+            entidad_id=None,
+            usuario_id=current_user.id,
+            empresa_id=empresa_actual.id,
+            detalle={"archivo": clean_filename, "motivo": "extension_invalida"},
+            ip=client_ip
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="El archivo debe tener extensión .xlsx (formato Excel moderno).",
         )
 
     try:
-        contenido = await archivo.read()
+        max_allowed_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+        chunks = []
+        total_read = 0
+        while True:
+            chunk = await archivo.read(1024 * 1024)  # Chunks de 1MB
+            if not chunk:
+                break
+            total_read += len(chunk)
+            if total_read > max_allowed_bytes:
+                await audit_service.registrar_evento(
+                    db=db,
+                    accion="ARCHIVO_RECHAZADO",
+                    entidad="importacion",
+                    entidad_id=None,
+                    usuario_id=current_user.id,
+                    empresa_id=empresa_actual.id,
+                    detalle={"archivo": clean_filename, "motivo": "tamano_excedido", "bytes": total_read},
+                    ip=client_ip
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"El archivo excede el tamaño máximo permitido de {settings.MAX_UPLOAD_SIZE_MB}MB.",
+                )
+            chunks.append(chunk)
+
+        contenido = b"".join(chunks)
         resultado = ExcelParserService.parse_excel(
             file_bytes=contenido,
-            filename=archivo.filename,
+            filename=clean_filename,
         )
         return resultado
     except ExcelParserException as e:
+        await audit_service.registrar_evento(
+            db=db,
+            accion="ARCHIVO_RECHAZADO",
+            entidad="importacion",
+            entidad_id=None,
+            usuario_id=current_user.id,
+            empresa_id=empresa_actual.id,
+            detalle={"archivo": clean_filename, "motivo": e.message},
+            ip=client_ip
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=e.message,
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error inesperado al procesar el archivo Excel: {str(e)}",
+            detail="Error interno al procesar el archivo Excel.",
         )
 
 

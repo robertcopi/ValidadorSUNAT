@@ -27,46 +27,58 @@ async def login(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Inicia sesión validando credenciales por nombre de usuario (método principal)
-    o por correo electrónico (compatibilidad).
+    Inicia sesión validando credenciales por correo electrónico, nombre de usuario o nombre completo.
     Implementa limitación de tasa (rate limiting) para prevenir fuerza bruta.
     Registra eventos de auditoría para intentos exitosos y fallidos.
     """
-    raw_identifier = credentials.username or credentials.email or ""
-    identifier_clean = raw_identifier.strip()
-    identifier_lower = identifier_clean.lower()
+    identifier = credentials.email.strip()
+    identifier_lower = identifier.lower()
     client_ip = _get_client_ip(request)
     rate_limit_key = f"{client_ip}:{identifier_lower}"
 
     # 1. Verificar si la IP/cuenta está temporalmente bloqueada por exceso de intentos
     if login_rate_limiter.is_rate_limited(rate_limit_key):
+        await audit_service.registrar_evento(
+            db=db,
+            accion="LOGIN_BLOQUEADO",
+            entidad="usuario",
+            entidad_id=None,
+            usuario_id=None,
+            empresa_id=None,
+            detalle={"identificador": identifier_lower, "motivo": "rate_limit_excedido"},
+            ip=client_ip
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Demasiados intentos fallidos. Intente nuevamente más tarde."
         )
 
-    # 2. Buscar usuario por username normalizado (principal), email o nombre completo (compatibilidad)
-    query = select(Usuario).where(
-        or_(
-            func.lower(Usuario.username) == identifier_lower,
-            func.lower(Usuario.email) == identifier_lower,
-            func.lower(Usuario.nombre_completo) == identifier_lower,
+    # 2. Buscar usuario por:
+    #   - Correo electrónico exacto (case-insensitive)
+    #   - Nombre de usuario (prefijo antes de '@' en el correo, ej: 'admin' o 'contador1.daira')
+    #   - Nombre completo del usuario (ej: 'Administrador General', 'Robert Estela')
+    if "@" in identifier_lower:
+        query = select(Usuario).where(func.lower(Usuario.email) == identifier_lower)
+    else:
+        query = select(Usuario).where(
+            or_(
+                func.lower(Usuario.email) == identifier_lower,
+                func.lower(Usuario.email).like(f"{identifier_lower}@%"),
+                func.lower(Usuario.nombre_completo) == identifier_lower,
+            )
         )
-    )
 
     result = await db.execute(query)
     users = result.scalars().all()
 
     user = None
     if users:
-        # Priorizar coincidencia exacta por username, luego por correo, luego por nombre completo
-        user = next((u for u in users if u.username.lower() == identifier_lower), None)
-        if not user:
-            user = next((u for u in users if u.email.lower() == identifier_lower), None)
+        # Priorizar coincidencia exacta por correo, luego por nombre completo
+        user = next((u for u in users if u.email.lower() == identifier_lower), None)
         if not user:
             user = next((u for u in users if u.nombre_completo.lower() == identifier_lower), users[0])
 
-    # 3. Validar credenciales de forma genérica sin revelar si el usuario existe
+    # 3. Validar credenciales de forma constante sin revelar si el correo existe
     if not user or not verify_password(credentials.password, user.password_hash):
         login_rate_limiter.record_failure(rate_limit_key)
         await audit_service.registrar_evento(
@@ -76,12 +88,12 @@ async def login(
             entidad_id=str(user.id) if user else None,
             usuario_id=user.id if user else None,
             empresa_id=user.empresa_id if user else None,
-            detalle={"identificador": identifier_clean, "motivo": "credenciales_invalidas"},
+            detalle={"email": credentials.email, "motivo": "credenciales_invalidas"},
             ip=client_ip
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Credenciales incorrectas.",
+            detail="Credenciales incorrectas. Verifique su correo y contraseña.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -94,7 +106,7 @@ async def login(
             entidad_id=str(user.id),
             usuario_id=user.id,
             empresa_id=user.empresa_id,
-            detalle={"identificador": identifier_clean, "username": user.username, "motivo": "cuenta_desactivada"},
+            detalle={"email": credentials.email, "motivo": "cuenta_desactivada"},
             ip=client_ip
         )
         raise HTTPException(
@@ -112,7 +124,7 @@ async def login(
         entidad_id=str(user.id),
         usuario_id=user.id,
         empresa_id=user.empresa_id,
-        detalle={"username": user.username, "email": user.email, "rol": user.rol},
+        detalle={"email": user.email, "rol": user.rol},
         ip=client_ip
     )
 

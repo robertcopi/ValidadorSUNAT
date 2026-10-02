@@ -38,7 +38,6 @@ export const UsuariosAdmin = () => {
   // Formulario Crear
   const [createData, setCreateData] = useState({
     nombre_completo: '',
-    username: '',
     email: '',
     rol: 'CONTADOR',
     empresa_id: '',
@@ -49,7 +48,6 @@ export const UsuariosAdmin = () => {
   const [selectedUser, setSelectedUser] = useState(null);
   const [editData, setEditData] = useState({
     nombre_completo: '',
-    username: '',
     email: '',
     rol: 'CONTADOR',
     empresa_id: '',
@@ -101,7 +99,6 @@ export const UsuariosAdmin = () => {
       setActionLoading(true);
       const payload = {
         nombre_completo: createData.nombre_completo.trim(),
-        username: createData.username.trim().toLowerCase(),
         email: createData.email.trim().toLowerCase(),
         rol: createData.rol,
         empresa_id: createData.empresa_id ? parseInt(createData.empresa_id, 10) : null,
@@ -113,7 +110,6 @@ export const UsuariosAdmin = () => {
       setShowCreateModal(false);
       setCreateData({
         nombre_completo: '',
-        username: '',
         email: '',
         rol: 'CONTADOR',
         empresa_id: '',
@@ -132,7 +128,6 @@ export const UsuariosAdmin = () => {
     setSelectedUser(u);
     setEditData({
       nombre_completo: u.nombre_completo,
-      username: u.username || '',
       email: u.email,
       rol: u.rol,
       empresa_id: u.empresa_id ? String(u.empresa_id) : '',
@@ -154,7 +149,6 @@ export const UsuariosAdmin = () => {
       setActionLoading(true);
       const payload = {
         nombre_completo: editData.nombre_completo.trim(),
-        username: editData.username.trim().toLowerCase(),
         email: editData.email.trim().toLowerCase(),
         rol: editData.rol,
         empresa_id: editData.empresa_id ? parseInt(editData.empresa_id, 10) : (editData.rol === 'ADMINISTRADOR' ? 0 : null),
@@ -234,10 +228,9 @@ export const UsuariosAdmin = () => {
     if (busqueda.trim()) {
       const term = busqueda.toLowerCase();
       const matchNom = u.nombre_completo.toLowerCase().includes(term);
-      const matchUname = u.username?.toLowerCase().includes(term);
       const matchEmail = u.email.toLowerCase().includes(term);
       const matchEmp = u.empresa?.razon_social?.toLowerCase().includes(term);
-      if (!matchNom && !matchUname && !matchEmail && !matchEmp) return false;
+      if (!matchNom && !matchEmail && !matchEmp) return false;
     }
     return true;
   });
@@ -368,12 +361,7 @@ export const UsuariosAdmin = () => {
                     <td style={{ fontWeight: '600', color: '#64748b' }}>#{u.id}</td>
                     <td>
                       <div style={{ fontWeight: '600' }}>{u.nombre_completo}</div>
-                      {u.username && (
-                        <div style={{ fontSize: '0.8rem', color: 'var(--color-primary)', fontWeight: '500' }}>
-                          @{u.username}
-                        </div>
-                      )}
-                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{u.email}</div>
+                      <div style={{ fontSize: '0.775rem', color: 'var(--color-text-muted)' }}>{u.email}</div>
                     </td>
                     <td>
                       <span className={`badge ${u.rol === 'ADMINISTRADOR' ? 'badge-info' : 'badge-success'}`}>
@@ -472,7 +460,7 @@ export const UsuariosAdmin = () => {
                 )}
 
                 <div className="form-group">
-                  <label className="form-label">Nombre Completo *</label>
+                  <label className="form-label">Nombre Completo</label>
                   <input
                     type="text"
                     className="form-input"
@@ -484,21 +472,7 @@ export const UsuariosAdmin = () => {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Nombre de Usuario *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Ej. robert (letras, números, '.', '_', '-')"
-                    value={createData.username}
-                    onChange={(e) => setCreateData({ ...createData, username: e.target.value })}
-                    required
-                    minLength={3}
-                    maxLength={50}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Correo Electrónico *</label>
+                  <label className="form-label">Correo Electrónico</label>
                   <input
                     type="email"
                     className="form-input"
@@ -612,20 +586,6 @@ export const UsuariosAdmin = () => {
                     value={editData.nombre_completo}
                     onChange={(e) => setEditData({ ...editData, nombre_completo: e.target.value })}
                     required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Nombre de Usuario *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Ej. robert"
-                    value={editData.username}
-                    onChange={(e) => setEditData({ ...editData, username: e.target.value })}
-                    required
-                    minLength={3}
-                    maxLength={50}
                   />
                 </div>
 

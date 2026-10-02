@@ -25,7 +25,6 @@ class Usuario(Base, TimestampMixin):
     )
     
     nombre_completo: Mapped[str] = mapped_column(String(150), nullable=False)
-    username: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     email: Mapped[str] = mapped_column(String(150), unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     rol: Mapped[str] = mapped_column(String(20), nullable=False, default="CONTADOR", index=True)
@@ -52,4 +51,4 @@ class Usuario(Base, TimestampMixin):
     )
 
     def __repr__(self) -> str:
-        return f"<Usuario id={self.id} username={self.username} email={self.email} rol={self.rol} empresa_id={self.empresa_id}>"
+        return f"<Usuario id={self.id} email={self.email} rol={self.rol} empresa_id={self.empresa_id}>"

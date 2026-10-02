@@ -1,10 +1,10 @@
 import secrets
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import require_role, get_db
-from app.core.security import get_password_hash, normalize_username, validate_username
+from app.core.security import get_password_hash
 from app.models.empresa import Empresa
 from app.models.usuario import Usuario
 from app.schemas.auth import ResetPasswordResponse
@@ -57,7 +57,7 @@ async def create_usuario(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Crea un nuevo usuario en el sistema con username único.
+    Crea un nuevo usuario en el sistema.
     Regla: CONTADOR debe pertenecer a exactamente una empresa válida.
     ADMINISTRADOR puede tener empresa_id = None.
     """
@@ -72,17 +72,7 @@ async def create_usuario(
             detail="Ya existe un usuario registrado con este correo electrónico."
         )
 
-    # 2. Validar y normalizar username (único globalmente)
-    raw_uname = payload.username or payload.email.split("@")[0]
-    clean_username = validate_username(raw_uname)
-    existing_uname = await db.execute(select(Usuario).where(func.lower(Usuario.username) == clean_username))
-    if existing_uname.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="El nombre de usuario ya está en uso."
-        )
-
-    # 3. Validar empresa si es requerida
+    # 2. Validar empresa si es requerida
     if payload.rol == "CONTADOR":
         if not payload.empresa_id:
             raise HTTPException(
@@ -110,12 +100,11 @@ async def create_usuario(
                 detail="La empresa seleccionada no existe."
             )
 
-    # 4. Hashear contraseña con bcrypt
+    # 3. Hashear contraseña con bcrypt
     hashed = get_password_hash(payload.password)
 
     nuevo_usuario = Usuario(
         nombre_completo=payload.nombre_completo.strip(),
-        username=clean_username,
         email=email_clean,
         password_hash=hashed,
         rol=payload.rol,
@@ -135,7 +124,6 @@ async def create_usuario(
         usuario_id=current_admin.id,
         empresa_id=nuevo_usuario.empresa_id,
         detalle={
-            "username": nuevo_usuario.username,
             "email": nuevo_usuario.email,
             "nombre_completo": nuevo_usuario.nombre_completo,
             "rol": nuevo_usuario.rol,
@@ -184,26 +172,6 @@ async def update_usuario(
             detail="Usuario no encontrado."
         )
 
-    campos_modificados = []
-
-    # Validar y actualizar username si cambia
-    if payload.username is not None:
-        clean_uname = validate_username(payload.username)
-        if clean_uname != user.username.lower():
-            dup_uname = await db.execute(
-                select(Usuario).where(
-                    func.lower(Usuario.username) == clean_uname,
-                    Usuario.id != usuario_id
-                )
-            )
-            if dup_uname.scalar_one_or_none():
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="El nombre de usuario ya está en uso."
-                )
-            user.username = clean_uname
-            campos_modificados.append("username")
-
     # Validar email si cambia
     if payload.email is not None:
         clean_email = payload.email.strip().lower()
@@ -215,16 +183,10 @@ async def update_usuario(
                     detail="El correo electrónico ya se encuentra en uso por otro usuario."
                 )
             user.email = clean_email
-            campos_modificados.append("email")
 
     if payload.nombre_completo is not None:
-        new_nom = payload.nombre_completo.strip()
-        if new_nom != user.nombre_completo:
-            user.nombre_completo = new_nom
-            campos_modificados.append("nombre_completo")
+        user.nombre_completo = payload.nombre_completo.strip()
 
-    if payload.rol and payload.rol != user.rol:
-        campos_modificados.append("rol")
     target_rol = payload.rol or user.rol
     user.rol = target_rol
 
@@ -259,17 +221,6 @@ async def update_usuario(
     await db.commit()
     await db.refresh(user)
 
-    detalle_auditoria = {
-        "username": user.username,
-        "email": user.email,
-        "nombre_completo": user.nombre_completo,
-        "rol": user.rol,
-        "empresa_id": user.empresa_id,
-        "campos_modificados": campos_modificados or ["datos_generales"]
-    }
-    if "username" in campos_modificados:
-        detalle_auditoria["campo_modificado"] = "username"
-
     await audit_service.registrar_evento(
         db=db,
         accion="USUARIO_EDITADO",
@@ -277,7 +228,12 @@ async def update_usuario(
         entidad_id=str(user.id),
         usuario_id=current_admin.id,
         empresa_id=user.empresa_id,
-        detalle=detalle_auditoria,
+        detalle={
+            "email": user.email,
+            "nombre_completo": user.nombre_completo,
+            "rol": user.rol,
+            "empresa_id": user.empresa_id
+        },
         ip=client_ip
     )
 

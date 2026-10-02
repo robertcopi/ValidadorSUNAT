@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Query, Request, s
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.rate_limit import export_rate_limiter
 from app.api.deps import get_current_user, get_current_empresa, require_role
 from app.models.usuario import Usuario
 from app.models.empresa import Empresa
@@ -278,6 +279,7 @@ async def reintentar_errores_proceso(
 )
 async def exportar_proceso_excel(
     id: str,
+    request: Request,
     current_user: Usuario = Depends(require_role(["CONTADOR", "ADMINISTRADOR"])),
     empresa: Optional[Empresa] = Depends(get_current_empresa),
     db: AsyncSession = Depends(get_db),
@@ -289,6 +291,14 @@ async def exportar_proceso_excel(
     - Aislamiento estricto por empresa (404 si es de otra empresa)
     - 0 consultas a SUNAT (lee datos ya persistidos en PostgreSQL)
     """
+    client_ip = request.client.host if request.client else "unknown"
+    rate_key = f"{client_ip}:{current_user.id}"
+    if export_rate_limiter.is_rate_limited(rate_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Ha excedido el límite de exportaciones permitidas por minuto. Por favor espere."
+        )
+
     if not empresa:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -15,6 +15,7 @@ import {
   LogOut,
   FileText,
 } from 'lucide-react';
+import logoEmpresa from '../../assets/logo-empresa.png';
 
 export const Sidebar = () => {
   const { user, logout } = useAuth();
@@ -30,10 +31,12 @@ export const Sidebar = () => {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="sidebar-logo-icon">
-          <ShieldCheck size={20} />
-        </div>
-        <div>
+        <img
+          src={logoEmpresa}
+          alt="Logo Corporativo JD"
+          className="sidebar-corporate-logo"
+        />
+        <div className="sidebar-brand-text">
           <h1 className="sidebar-title">Validador SUNAT</h1>
           <p className="sidebar-subtitle">Gestión Contable Multiempresa</p>
         </div>

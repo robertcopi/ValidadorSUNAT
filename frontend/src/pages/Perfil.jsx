@@ -105,11 +105,6 @@ export const Perfil = () => {
           </div>
 
           <div>
-            <label className="form-label" style={{ color: 'var(--color-text-muted)' }}>Nombre de Usuario</label>
-            <div style={{ fontWeight: '600', fontSize: '0.95rem', color: 'var(--color-primary)' }}>{user?.username || 'N/A'}</div>
-          </div>
-
-          <div>
             <label className="form-label" style={{ color: 'var(--color-text-muted)' }}>Correo Electrónico</label>
             <div style={{ fontWeight: '500', fontSize: '0.95rem' }}>{user?.email || 'N/A'}</div>
           </div>

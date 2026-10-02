@@ -22,8 +22,22 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+
+        # Content-Security-Policy estricta compatible con frontend React/Vite
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com data:; "
+            "img-src 'self' data: blob:; "
+            "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self';"
+        )
 
         # HSTS solo aplicable si es HTTPS o entorno de producción
         if settings.ENVIRONMENT != "development" and request.url.scheme == "https":
@@ -69,9 +83,9 @@ async def global_exception_handler(request: Request, exc: Exception):
     logger.error(
         "Excepción no controlada procesando %s %s: %s",
         request.method, request.url.path, str(exc),
-        exc_info=settings.DEBUG
+        exc_info=(settings.DEBUG and settings.ENVIRONMENT == "development")
     )
-    if settings.DEBUG:
+    if settings.DEBUG and settings.ENVIRONMENT == "development":
         detail = f"Error interno: {str(exc)}"
     else:
         detail = "Error interno del servidor. Por favor, comuníquese con el administrador si el problema persiste."

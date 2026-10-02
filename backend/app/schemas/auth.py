@@ -4,15 +4,8 @@ from app.schemas.usuario import UsuarioResponse
 
 
 class LoginRequest(BaseModel):
-    username: Optional[str] = Field(None, min_length=1, max_length=150, description="Nombre de usuario")
-    email: Optional[str] = Field(None, min_length=1, max_length=150, description="Correo electrónico (compatibilidad)")
+    email: str = Field(..., min_length=3, max_length=150, description="Correo electrónico o nombre de usuario")
     password: str = Field(..., min_length=1, max_length=100)
-
-    @model_validator(mode="after")
-    def validate_identifier(self) -> "LoginRequest":
-        if not (self.username and self.username.strip()) and not (self.email and self.email.strip()):
-            raise ValueError("Debe ingresar su nombre de usuario o correo electrónico.")
-        return self
 
 
 class TokenResponse(BaseModel):

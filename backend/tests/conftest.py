@@ -20,7 +20,7 @@ from app.models.empresa import Empresa
 from app.models.usuario import Usuario
 
 from sqlalchemy.pool import StaticPool
-from app.core.rate_limit import login_rate_limiter
+from app.core.rate_limit import login_rate_limiter, upload_rate_limiter, export_rate_limiter
 from app.services.proceso_masivo_service import proceso_masivo_service
 
 # Base de datos SQLite en memoria para tests rápidos y aislados
@@ -51,6 +51,8 @@ def event_loop():
 @pytest_asyncio.fixture(scope="function")
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     login_rate_limiter.clear_all()
+    upload_rate_limiter.clear_all()
+    export_rate_limiter.clear_all()
     proceso_masivo_service.set_session_factory(TestingSessionLocal)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -65,7 +67,6 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         test_pwd = get_password_hash("Password123!")
 
         admin = Usuario(
-            username="admin",
             email="admin@test.local",
             nombre_completo="Admin Test",
             rol="ADMINISTRADOR",
@@ -74,7 +75,6 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             activo=True
         )
         contador_daira = Usuario(
-            username="contador.daira",
             email="contador.daira@test.local",
             nombre_completo="Contador DAIRA Test",
             rol="CONTADOR",
@@ -83,7 +83,6 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             activo=True
         )
         contador_jjd = Usuario(
-            username="contador.jjd",
             email="contador.jjd@test.local",
             nombre_completo="Contador JJD Test",
             rol="CONTADOR",
@@ -108,6 +107,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+    await test_engine.dispose()
 
 
 @pytest_asyncio.fixture(scope="function")

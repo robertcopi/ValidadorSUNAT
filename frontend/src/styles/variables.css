@@ -1,23 +1,52 @@
 :root {
-  /* Paleta Contable Empresarial Sobria */
-  --color-primary: #1e3a8a;          /* Azul corporativo formal */
+  /* ==========================================================================
+     IDENTIDAD CORPORATIVA BASADA EN LAS LETRAS DEL LOGO
+     - Letra 'J': Cian / Turquesa (#00ffff / #0891b2 / #06b6d4)
+     - Letra 'D': Rojo Corporativo (#ff0000 / #dc2626 / #ef4444)
+     - Fondo: Blanco Puro (#ffffff)
+     ========================================================================== */
+  --brand-cyan: #06b6d4;              /* Cian principal de marca */
+  --brand-cyan-vibrant: #00ffff;      /* Cian puro de la letra J */
+  --brand-cyan-deep: #0891b2;         /* Cian profundo para máxima legibilidad */
+  --brand-cyan-hover: #0e7490;        /* Cian hover */
+  --brand-cyan-light: #ecfeff;        /* Fondo sutil cian */
+  --brand-cyan-glow: rgba(6, 182, 212, 0.25);
+  --brand-cyan-border: #a5f3fc;
+  
+  --brand-red: #ef4444;               /* Rojo principal de marca */
+  --brand-red-vibrant: #ff0000;       /* Rojo puro de la letra D */
+  --brand-red-deep: #dc2626;          /* Rojo accesible */
+  --brand-red-hover: #b91c1c;         /* Rojo hover */
+  --brand-red-light: #fef2f2;         /* Fondo sutil rojo */
+  --brand-red-border: #fecaca;
+  --brand-red-glow: rgba(239, 68, 68, 0.25);
+
+  /* Paleta Empresarial Contable */
+  --color-primary: #1d4ed8;           /* Azul corporativo formal y de alto contraste */
   --color-primary-hover: #1e40af;
   --color-primary-light: #eff6ff;
   
-  --color-secondary: #3b82f6;        /* Azul de acento */
-  --color-sidebar: #0f172a;          /* Slate 900 oscuro sobrio */
-  --color-sidebar-hover: #1e293b;    /* Slate 800 */
-  --color-sidebar-active: #2563eb;
-  --color-sidebar-text: #94a3b8;
+  --color-secondary: #dc2626;         /* Rojo corporativo (Letra D) */
+  --color-secondary-hover: #b91c1c;
+  --color-secondary-light: #fef2f2;
+  
+  /* Sidebar azul oscuro corporativo alineado con el banner Visión Consolidada */
+  --color-sidebar: #0f172a;           /* Azul oscuro profundo (Slate 900) */
+  --color-sidebar-gradient: linear-gradient(180deg, #1e3a8a 0%, #0f172a 100%); /* Mismo degradado de Visión Consolidada */
+  --color-sidebar-hover: rgba(255, 255, 255, 0.08);
+  --color-sidebar-active: rgba(30, 58, 138, 0.65);
+  --color-sidebar-border: rgba(255, 255, 255, 0.1);
+  --color-sidebar-text: #e2e8f0;      /* Blanco / Gris muy claro */
   --color-sidebar-text-active: #ffffff;
+  --color-sidebar-accent: #00ffff;    /* Acento turquesa/cian del logo */
   
-  --color-bg-app: #f8fafc;           /* Fondo gris neutro suave */
-  --color-bg-card: #ffffff;          /* Blanco puro */
-  --color-border: #e2e8f0;           /* Bordes sutiles */
-  --color-border-focus: #3b82f6;
+  --color-bg-app: #f8fafc;            /* Fondo gris neutro suave */
+  --color-bg-card: #ffffff;           /* Blanco puro */
+  --color-border: #e2e8f0;            /* Bordes sutiles */
+  --color-border-focus: #2563eb;      /* Foco en azul */
   
-  --color-text-main: #0f172a;        /* Texto principal */
-  --color-text-muted: #64748b;       /* Texto secundario */
+  --color-text-main: #0f172a;         /* Texto principal */
+  --color-text-muted: #64748b;        /* Texto secundario */
   --color-text-light: #94a3b8;
   
   /* Estados Fiscales y Badges */
@@ -33,9 +62,9 @@
   --color-danger-text: #991b1b;
   --color-danger-border: #fecaca;
   
-  --color-info-bg: #eff6ff;
-  --color-info-text: #1e40af;
-  --color-info-border: #bfdbfe;
+  --color-info-bg: #ecfeff;
+  --color-info-text: #0e7490;
+  --color-info-border: #a5f3fc;
 
   /* Espaciado y Sombras */
   --radius-sm: 6px;
