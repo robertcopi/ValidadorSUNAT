@@ -170,11 +170,21 @@ async def test_archivo_real_completo(client: AsyncClient):
     assert diag["columnas_mapeadas"]["fecha_emision"] == "Columna 2"
 
     # Precisión 3: Verificar Nota de Crédito (fila 195)
+    # Regla: MONTO SUNAT = abs((BASE IMPONIBLE + IGV) / TIPO DE CAMBIO)
+    # Base: -17917.50, IGV: -3225.15, Base+IGV: -21142.65, TC: 3.3720 -> -21142.65 / 3.3720 = -6270.06
     nc = next((f for f in data["filas"] if f["cod_comp"] == "07"), None)
     assert nc is not None, "Debe existir al menos una nota de crédito"
     assert nc["fila_excel"] == 195
-    assert Decimal(str(nc["monto_original"])) == Decimal("-21142.71")
-    assert Decimal(str(nc["monto"])) == Decimal("21142.71")
+    assert Decimal(str(nc["base_imponible"])) == Decimal("-17917.50")
+    assert Decimal(str(nc["igv"])) == Decimal("-3225.15")
+    assert Decimal(str(nc["monto_base_igv"])) == Decimal("-21142.65")
+    assert Decimal(str(nc["valor_adquisiciones_no_gravadas"])) == Decimal("-0.06")
+    assert Decimal(str(nc["monto_calculado_original"])) == Decimal("-21142.71")
+    assert Decimal(str(nc["tipo_cambio"])) == Decimal("3.3720")
+    assert Decimal(str(nc["monto_convertido"])) == Decimal("-6270.08")
+    assert Decimal(str(nc["monto_original"])) == Decimal("-6270.08")
+    assert Decimal(str(nc["monto"])) == Decimal("6270.08")
+    assert Decimal(str(nc["importe_total_excel"])) == Decimal("-21142.71")
     assert nc["numero_serie"] == "FC01"
     assert nc["numero"] == "3242"
     assert nc["estado_archivo"] == "LISTO"

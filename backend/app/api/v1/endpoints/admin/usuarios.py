@@ -1,7 +1,7 @@
 import secrets
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import require_role, get_db
 from app.core.security import get_password_hash
@@ -63,16 +63,25 @@ async def create_usuario(
     """
     client_ip = _get_client_ip(request)
 
-    # 1. Validar unicidad de email
+    # 1. Validar unicidad y normalización de username
+    username_clean = payload.username.strip().lower()
+    existing_user_res = await db.execute(select(Usuario).where(func.lower(Usuario.username) == username_clean))
+    if existing_user_res.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El nombre de usuario ya está registrado."
+        )
+
+    # 2. Validar unicidad y normalización de email
     email_clean = payload.email.strip().lower()
-    existing_res = await db.execute(select(Usuario).where(Usuario.email == email_clean))
+    existing_res = await db.execute(select(Usuario).where(func.lower(Usuario.email) == email_clean))
     if existing_res.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Ya existe un usuario registrado con este correo electrónico."
+            detail="El correo electrónico ya está registrado."
         )
 
-    # 2. Validar empresa si es requerida
+    # 3. Validar empresa si es requerida
     if payload.rol == "CONTADOR":
         if not payload.empresa_id:
             raise HTTPException(
@@ -100,11 +109,12 @@ async def create_usuario(
                 detail="La empresa seleccionada no existe."
             )
 
-    # 3. Hashear contraseña con bcrypt
+    # 4. Hashear contraseña con bcrypt
     hashed = get_password_hash(payload.password)
 
     nuevo_usuario = Usuario(
         nombre_completo=payload.nombre_completo.strip(),
+        username=username_clean,
         email=email_clean,
         password_hash=hashed,
         rol=payload.rol,
@@ -124,6 +134,7 @@ async def create_usuario(
         usuario_id=current_admin.id,
         empresa_id=nuevo_usuario.empresa_id,
         detalle={
+            "username": nuevo_usuario.username,
             "email": nuevo_usuario.email,
             "nombre_completo": nuevo_usuario.nombre_completo,
             "rol": nuevo_usuario.rol,
@@ -171,6 +182,18 @@ async def update_usuario(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Usuario no encontrado."
         )
+
+    # Validar username si cambia
+    if payload.username is not None:
+        clean_username = payload.username.strip().lower()
+        if clean_username != user.username:
+            dup_user = await db.execute(select(Usuario).where(Usuario.username == clean_username, Usuario.id != usuario_id))
+            if dup_user.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="El nombre de usuario ya se encuentra en uso por otro usuario."
+                )
+            user.username = clean_username
 
     # Validar email si cambia
     if payload.email is not None:

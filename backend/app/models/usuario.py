@@ -25,6 +25,7 @@ class Usuario(Base, TimestampMixin):
     )
     
     nombre_completo: Mapped[str] = mapped_column(String(150), nullable=False)
+    username: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     email: Mapped[str] = mapped_column(String(150), unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     rol: Mapped[str] = mapped_column(String(20), nullable=False, default="CONTADOR", index=True)

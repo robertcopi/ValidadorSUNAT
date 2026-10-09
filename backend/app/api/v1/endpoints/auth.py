@@ -55,13 +55,15 @@ async def login(
 
     # 2. Buscar usuario por:
     #   - Correo electrónico exacto (case-insensitive)
-    #   - Nombre de usuario (prefijo antes de '@' en el correo, ej: 'admin' o 'contador1.daira')
-    #   - Nombre completo del usuario (ej: 'Administrador General', 'Robert Estela')
+    #   - Nombre de usuario exacto (case-insensitive, ej: 'admin', 'robert', 'daniel')
+    #   - Prefijo antes de '@' en el correo
+    #   - Nombre completo del usuario
     if "@" in identifier_lower:
         query = select(Usuario).where(func.lower(Usuario.email) == identifier_lower)
     else:
         query = select(Usuario).where(
             or_(
+                func.lower(Usuario.username) == identifier_lower,
                 func.lower(Usuario.email) == identifier_lower,
                 func.lower(Usuario.email).like(f"{identifier_lower}@%"),
                 func.lower(Usuario.nombre_completo) == identifier_lower,
@@ -73,8 +75,11 @@ async def login(
 
     user = None
     if users:
-        # Priorizar coincidencia exacta por correo, luego por nombre completo
-        user = next((u for u in users if u.email.lower() == identifier_lower), None)
+        # Priorizar coincidencia exacta por username o correo, luego por nombre completo
+        user = next(
+            (u for u in users if (u.username and u.username.lower() == identifier_lower) or u.email.lower() == identifier_lower),
+            None
+        )
         if not user:
             user = next((u for u in users if u.nombre_completo.lower() == identifier_lower), users[0])
 

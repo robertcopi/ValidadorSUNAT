@@ -25,7 +25,12 @@ from app.schemas.auditoria import (
     AuditoriaEventoResponse,
     AuditoriaPaginadaResponse,
 )
-from app.schemas.sunat import ComprobanteValidarRequest, ConsultaCPEResponse, TIPO_COMPROBANTE_MAP
+from app.schemas.sunat import (
+    ComprobanteValidarRequest,
+    ConsultaCPEResponse,
+    EliminarConsultaCPEResponse,
+    TIPO_COMPROBANTE_MAP,
+)
 from app.schemas.importacion import (
     FilaComprobantePreview,
     DiagnosticoImportacion,
@@ -64,6 +69,7 @@ __all__ = [
     "AuditoriaPaginadaResponse",
     "ComprobanteValidarRequest",
     "ConsultaCPEResponse",
+    "EliminarConsultaCPEResponse",
     "TIPO_COMPROBANTE_MAP",
     "FilaComprobantePreview",
     "DiagnosticoImportacion",

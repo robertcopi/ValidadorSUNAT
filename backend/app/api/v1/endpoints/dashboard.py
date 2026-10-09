@@ -32,15 +32,20 @@ async def obtener_resumen_dashboard(
     empresa: Optional[Empresa] = Depends(get_current_empresa),
     db: AsyncSession = Depends(get_db),
 ) -> DashboardResumenResponse:
-    if not empresa:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Debe tener una empresa asociada para consultar el dashboard."
-        )
+    if current_user.rol == "CONTADOR":
+        if not empresa:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="El contador debe tener una empresa asociada para consultar el dashboard."
+            )
+        target_empresa_id = empresa.id
+    else:
+        # Rol ADMINISTRADOR: Si seleccionó empresa por cabecera X-Empresa-Id usa esa, si no usa None (Visión Consolidada)
+        target_empresa_id = empresa.id if empresa else None
 
     return await proceso_masivo_service.obtener_resumen_dashboard(
         db=db,
-        empresa_id=empresa.id,
+        empresa_id=target_empresa_id,
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
         estado=estado,

@@ -148,6 +148,15 @@ export const CargaMasiva = () => {
         monto_original: f.monto_original !== undefined ? f.monto_original : f.monto,
         monto: f.monto,
         razon_social: f.razon_social_emisor,
+        base_imponible: f.base_imponible,
+        igv: f.igv,
+        monto_base_igv: f.monto_base_igv,
+        valor_adquisiciones_no_gravadas: f.valor_adquisiciones_no_gravadas,
+        monto_calculado_original: f.monto_calculado_original,
+        tipo_cambio: f.tipo_cambio,
+        monto_convertido: f.monto_convertido,
+        importe_total_excel: f.importe_total_excel,
+        otros_tributos: f.otros_tributos,
       }));
 
     try {
@@ -946,8 +955,15 @@ export const CargaMasiva = () => {
                   <th style={{ padding: '0.65rem 0.85rem' }}>SERIE</th>
                   <th style={{ padding: '0.65rem 0.85rem' }}>NÚMERO</th>
                   <th style={{ padding: '0.65rem 0.85rem' }}>FECHA EMISIÓN</th>
-                  <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>MONTO ORIGINAL</th>
+                  <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>BASE IMPONIBLE</th>
+                  <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>IGV</th>
+                  <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>BASE + IGV</th>
+                  <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>NO GRAVADAS</th>
+                  <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>MONTO CALCULADO</th>
+                  <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>TIPO CAMBIO</th>
+                  <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>CONVERTIDO</th>
                   <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>MONTO SUNAT</th>
+                  <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>TOTAL EXCEL</th>
                   <th style={{ padding: '0.65rem 0.85rem' }}>RAZÓN SOCIAL</th>
                   <th style={{ padding: '0.65rem 0.85rem' }}>OBSERVACIONES</th>
                 </tr>
@@ -955,7 +971,7 @@ export const CargaMasiva = () => {
               <tbody>
                 {filasFiltradas.length === 0 ? (
                   <tr>
-                    <td colSpan={14} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
+                    <td colSpan={21} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
                       No se encontraron comprobantes que coincidan con el filtro seleccionado.
                     </td>
                   </tr>
@@ -1111,18 +1127,106 @@ export const CargaMasiva = () => {
                           {fila.fecha_emision || '—'}
                         </td>
 
-                        {/* Monto Original (con signo negativo si aplica) */}
+                        {/* Base Imponible */}
                         <td
                           style={{
                             padding: '0.6rem 0.85rem',
                             textAlign: 'right',
                             fontFamily: 'monospace',
                             color: esMontoNegativo ? '#dc2626' : '#0f172a',
-                            fontWeight: esMontoNegativo ? '700' : '500',
+                            fontWeight: esMontoNegativo ? '600' : '400',
                           }}
                         >
-                          {fila.monto_original !== null && fila.monto_original !== undefined
-                            ? Number(fila.monto_original).toLocaleString('es-PE', { minimumFractionDigits: 2 })
+                          {fila.base_imponible !== null && fila.base_imponible !== undefined
+                            ? Number(fila.base_imponible).toLocaleString('es-PE', { minimumFractionDigits: 2 })
+                            : '—'}
+                        </td>
+
+                        {/* IGV */}
+                        <td
+                          style={{
+                            padding: '0.6rem 0.85rem',
+                            textAlign: 'right',
+                            fontFamily: 'monospace',
+                            color: esMontoNegativo ? '#dc2626' : '#0f172a',
+                          }}
+                        >
+                          {fila.igv !== null && fila.igv !== undefined
+                            ? Number(fila.igv).toLocaleString('es-PE', { minimumFractionDigits: 2 })
+                            : '—'}
+                        </td>
+
+                        {/* Base + IGV */}
+                        <td
+                          style={{
+                            padding: '0.6rem 0.85rem',
+                            textAlign: 'right',
+                            fontFamily: 'monospace',
+                            fontWeight: '600',
+                            color: esMontoNegativo ? '#dc2626' : '#334155',
+                          }}
+                        >
+                          {fila.monto_base_igv !== null && fila.monto_base_igv !== undefined
+                            ? Number(fila.monto_base_igv).toLocaleString('es-PE', { minimumFractionDigits: 2 })
+                            : '—'}
+                        </td>
+
+                        {/* No Gravadas */}
+                        <td
+                          style={{
+                            padding: '0.6rem 0.85rem',
+                            textAlign: 'right',
+                            fontFamily: 'monospace',
+                            color: esMontoNegativo ? '#dc2626' : '#0f172a',
+                          }}
+                        >
+                          {fila.valor_adquisiciones_no_gravadas !== null && fila.valor_adquisiciones_no_gravadas !== undefined
+                            ? Number(fila.valor_adquisiciones_no_gravadas).toLocaleString('es-PE', { minimumFractionDigits: 2 })
+                            : '—'}
+                        </td>
+
+                        {/* Monto Calculado Original (Base + IGV + No Gravadas) */}
+                        <td
+                          style={{
+                            padding: '0.6rem 0.85rem',
+                            textAlign: 'right',
+                            fontFamily: 'monospace',
+                            fontWeight: '600',
+                            color: esMontoNegativo ? '#dc2626' : '#0f172a',
+                          }}
+                        >
+                          {fila.monto_calculado_original !== null && fila.monto_calculado_original !== undefined
+                            ? Number(fila.monto_calculado_original).toLocaleString('es-PE', { minimumFractionDigits: 2 })
+                            : '—'}
+                        </td>
+
+                        {/* Tipo de Cambio */}
+                        <td
+                          style={{
+                            padding: '0.6rem 0.85rem',
+                            textAlign: 'right',
+                            fontFamily: 'monospace',
+                            fontWeight: fila.tipo_cambio ? '600' : '400',
+                            color: fila.tipo_cambio ? '#2563eb' : '#94a3b8',
+                          }}
+                        >
+                          {fila.tipo_cambio !== null && fila.tipo_cambio !== undefined
+                            ? Number(fila.tipo_cambio).toFixed(3)
+                            : '—'}
+                        </td>
+
+                        {/* Monto Convertido */}
+                        <td
+                          style={{
+                            padding: '0.6rem 0.85rem',
+                            textAlign: 'right',
+                            fontFamily: 'monospace',
+                            fontWeight: fila.monto_convertido ? '600' : '400',
+                            color: fila.monto_convertido ? (esMontoNegativo ? '#dc2626' : '#7c3aed') : '#94a3b8',
+                          }}
+                        >
+                          {fila.monto_convertido !== null && fila.monto_convertido !== undefined
+                            ? Number(fila.monto_convertido).toLocaleString('es-PE', { minimumFractionDigits: 2 })
                             : '—'}
                         </td>
 
@@ -1132,12 +1236,27 @@ export const CargaMasiva = () => {
                             padding: '0.6rem 0.85rem',
                             textAlign: 'right',
                             fontFamily: 'monospace',
-                            fontWeight: '600',
+                            fontWeight: '700',
                             color: '#16a34a',
                           }}
                         >
                           {fila.monto !== null && fila.monto !== undefined
                             ? Number(fila.monto).toLocaleString('es-PE', { minimumFractionDigits: 2 })
+                            : '—'}
+                        </td>
+
+                        {/* Total Excel */}
+                        <td
+                          style={{
+                            padding: '0.6rem 0.85rem',
+                            textAlign: 'right',
+                            fontFamily: 'monospace',
+                            color: '#64748b',
+                            fontSize: '0.75rem',
+                          }}
+                        >
+                          {fila.importe_total_excel !== null && fila.importe_total_excel !== undefined
+                            ? Number(fila.importe_total_excel).toLocaleString('es-PE', { minimumFractionDigits: 2 })
                             : '—'}
                         </td>
 

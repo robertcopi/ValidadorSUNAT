@@ -15,6 +15,8 @@ import {
   ShieldAlert,
   Loader2,
   History,
+  Trash2,
+  X,
 } from 'lucide-react';
 
 const TIPOS_COMPROBANTE = [
@@ -47,6 +49,10 @@ export const ValidacionIndividual = () => {
   const [resultado, setResultado] = useState(null);
   const [consultasRecientes, setConsultasRecientes] = useState([]);
   const [loadingHistorial, setLoadingHistorial] = useState(false);
+  const [consultaAEliminar, setConsultaAEliminar] = useState(null);
+  const [eliminando, setEliminando] = useState(false);
+  const [errorEliminar, setErrorEliminar] = useState('');
+  const [mensajeExito, setMensajeExito] = useState('');
 
   // Cargar historial reciente de la empresa
   const fetchHistorial = async () => {
@@ -59,6 +65,49 @@ export const ValidacionIndividual = () => {
       console.error('Error al cargar historial de consultas:', err);
     } finally {
       setLoadingHistorial(false);
+    }
+  };
+
+  const handleAbrirModalEliminar = (item) => {
+    setErrorEliminar('');
+    setConsultaAEliminar(item);
+  };
+
+  const handleConfirmarEliminar = async () => {
+    if (!consultaAEliminar || eliminando) return;
+    setEliminando(true);
+    setErrorEliminar('');
+    try {
+      await axiosClient.delete(`/sunat/consultas/${consultaAEliminar.id}`);
+
+      // Retirar inmediatamente de la tabla sin recargar toda la página
+      setConsultasRecientes((prev) => prev.filter((c) => c.id !== consultaAEliminar.id));
+
+      setConsultaAEliminar(null);
+      setMensajeExito('Consulta eliminada correctamente');
+      setTimeout(() => {
+        setMensajeExito('');
+      }, 5000);
+
+      // Refrescar historial
+      fetchHistorial();
+    } catch (err) {
+      console.error('Error al eliminar consulta:', err);
+      const status = err.response?.status;
+      const detail = err.response?.data?.detail;
+      if (status === 409) {
+        setErrorEliminar(
+          typeof detail === 'string'
+            ? detail
+            : 'Esta consulta pertenece a un lote masivo y debe gestionarse desde el historial del lote.'
+        );
+      } else if (typeof detail === 'string') {
+        setErrorEliminar(detail);
+      } else {
+        setErrorEliminar('No se pudo eliminar la consulta.');
+      }
+    } finally {
+      setEliminando(false);
     }
   };
 
@@ -554,6 +603,41 @@ export const ValidacionIndividual = () => {
         </div>
       )}
 
+      {/* Alerta de Éxito al eliminar consulta */}
+      {mensajeExito && (
+        <div
+          style={{
+            marginBottom: '1rem',
+            padding: '0.75rem 1rem',
+            backgroundColor: '#ecfdf5',
+            border: '1px solid #a7f3d0',
+            borderRadius: '6px',
+            color: '#065f46',
+            fontSize: '0.85rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <CheckCircle2 size={16} color="#059669" />
+            <span>{mensajeExito}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMensajeExito('')}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: '#059669',
+            }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Historial Reciente de Consultas */}
       {consultasRecientes.length > 0 && (
         <div className="card">
@@ -574,6 +658,7 @@ export const ValidacionIndividual = () => {
                   <th style={{ padding: '0.6rem 0.5rem', textAlign: 'right' }}>Importe</th>
                   <th style={{ padding: '0.6rem 0.5rem', textAlign: 'center' }}>Estado</th>
                   <th style={{ padding: '0.6rem 0.5rem' }}>Fecha Consulta</th>
+                  <th style={{ padding: '0.6rem 0.5rem', textAlign: 'center' }}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -595,10 +680,174 @@ export const ValidacionIndividual = () => {
                     <td style={{ padding: '0.6rem 0.5rem', color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>
                       {new Date(item.created_at).toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' })}
                     </td>
+                    <td style={{ padding: '0.6rem 0.5rem', textAlign: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleAbrirModalEliminar(item)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          padding: '0.35rem 0.65rem',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          color: '#dc2626',
+                          backgroundColor: '#fee2e2',
+                          border: '1px solid #fecaca',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease-in-out',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#fca5a5';
+                          e.currentTarget.style.color = '#b91c1c';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = '#fee2e2';
+                          e.currentTarget.style.color = '#dc2626';
+                        }}
+                        title="Eliminar consulta"
+                      >
+                        <Trash2 size={13} />
+                        <span>Eliminar</span>
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmación de Eliminación */}
+      {consultaAEliminar && (
+        <div className="modal-overlay" style={{ zIndex: 1100 }}>
+          <div className="modal-content" style={{ maxWidth: '440px' }}>
+            <div className="modal-header">
+              <div className="modal-title" style={{ color: '#b91c1c' }}>
+                <AlertTriangle size={20} color="#dc2626" />
+                <span>Eliminar consulta</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => !eliminando && setConsultaAEliminar(null)}
+                disabled={eliminando}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: eliminando ? 'not-allowed' : 'pointer',
+                  color: '#64748b',
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body">
+              {errorEliminar && (
+                <div
+                  style={{
+                    padding: '0.75rem',
+                    marginBottom: '1rem',
+                    backgroundColor: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    borderRadius: '6px',
+                    color: '#991b1b',
+                    fontSize: '0.825rem',
+                  }}
+                >
+                  {errorEliminar}
+                </div>
+              )}
+
+              <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', color: '#1e293b' }}>
+                ¿Seguro que deseas eliminar esta consulta?
+              </p>
+
+              <div
+                style={{
+                  marginBottom: '1rem',
+                  backgroundColor: '#f8fafc',
+                  padding: '0.85rem 1rem',
+                  borderRadius: '6px',
+                  border: '1px solid #e2e8f0',
+                  fontSize: '0.85rem',
+                }}
+              >
+                <div style={{ marginBottom: '0.4rem' }}>
+                  <span style={{ color: '#64748b' }}>Comprobante: </span>
+                  <strong style={{ color: '#0f172a' }}>
+                    {consultaAEliminar.tipo_comprobante}-{consultaAEliminar.serie}-{consultaAEliminar.numero}
+                  </strong>
+                </div>
+                <div style={{ marginBottom: '0.4rem' }}>
+                  <span style={{ color: '#64748b' }}>RUC: </span>
+                  <strong style={{ color: '#0f172a', fontFamily: 'monospace' }}>
+                    {consultaAEliminar.ruc_emisor}
+                  </strong>
+                </div>
+                <div style={{ marginBottom: '0.4rem' }}>
+                  <span style={{ color: '#64748b' }}>Importe: </span>
+                  <strong style={{ color: '#0f172a' }}>
+                    S/ {parseFloat(consultaAEliminar.monto).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </strong>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <span style={{ color: '#64748b' }}>Estado: </span>
+                  <span>{getEstadoBadge(consultaAEliminar.estado)}</span>
+                </div>
+              </div>
+
+              <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.825rem', color: '#64748b' }}>
+                Esta acción eliminará la consulta del historial.
+              </p>
+              <p style={{ margin: 0, fontSize: '0.825rem', color: '#dc2626', fontWeight: '600' }}>
+                Esta acción no se puede deshacer.
+              </p>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                type="button"
+                disabled={eliminando}
+                onClick={() => setConsultaAEliminar(null)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  backgroundColor: '#ffffff',
+                  color: '#334155',
+                  fontSize: '0.825rem',
+                  fontWeight: '600',
+                  cursor: eliminando ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={eliminando}
+                onClick={handleConfirmarEliminar}
+                style={{
+                  padding: '0.5rem 1.1rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: '#dc2626',
+                  color: '#ffffff',
+                  fontSize: '0.825rem',
+                  fontWeight: '600',
+                  cursor: eliminando ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  boxShadow: '0 1px 2px rgba(220, 38, 38, 0.2)',
+                }}
+              >
+                {eliminando ? <Loader2 size={15} className="spin" /> : <Trash2 size={15} />}
+                <span>{eliminando ? 'Eliminando...' : 'Eliminar'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

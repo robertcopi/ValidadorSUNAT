@@ -14,11 +14,25 @@ class FilaComprobantePreview(BaseModel):
     numero: Optional[str] = None
     fecha_emision: Optional[str] = None  # Formateada DD/MM/YYYY para SUNAT
     monto_original: Optional[Decimal] = None  # Importe contable original (puede ser negativo ej. notas de crédito)
-    monto: Optional[Decimal] = None  # Importe normalizado positivo para consulta en SUNAT
+    monto: Optional[Decimal] = None  # Importe normalizado positivo para consulta en SUNAT (monto_sunat = abs(monto_base_igv))
+    base_imponible: Optional[Decimal] = None  # Base imponible de adquisiciones gravadas
+    igv: Optional[Decimal] = None  # IGV de adquisiciones gravadas
+    monto_base_igv: Optional[Decimal] = None  # Base imponible + IGV con signo contable
+    valor_adquisiciones_no_gravadas: Optional[Decimal] = None  # Valor de las adquisiciones no gravadas
+    monto_calculado_original: Optional[Decimal] = None  # monto_base_igv + valor_adquisiciones_no_gravadas con signo contable
+    tipo_cambio: Optional[Decimal] = None  # Tipo de cambio original del comprobante (si aplica)
+    monto_convertido: Optional[Decimal] = None  # monto_calculado_original / tipo_cambio con signo contable original
+    importe_total_excel: Optional[Decimal] = None  # Columna IMPORTE TOTAL del Excel original (para trazabilidad/historial)
+    otros_tributos: Optional[Decimal] = None  # Otros tributos y cargos del comprobante
     razon_social_emisor: Optional[str] = None
     estado_archivo: str  # LISTO | ERROR | DUPLICADO | NO_SOPORTADO
     errores: List[str] = []
     es_seleccionable: bool = False
+
+    @property
+    def monto_sunat(self) -> Optional[Decimal]:
+        """Alias conceptual explícito: monto enviado a la consulta SUNAT."""
+        return self.monto
 
     model_config = ConfigDict(from_attributes=True)
 

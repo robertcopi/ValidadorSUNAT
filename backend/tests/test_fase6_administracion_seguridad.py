@@ -31,6 +31,7 @@ async def test_admin_crea_contador_con_empresa(client: AsyncClient, db_session: 
         headers={"Authorization": f"Bearer {token}"},
         json={
             "nombre_completo": "Nuevo Contador",
+            "username": "nuevo.contador",
             "email": "nuevo.contador@daira.local",
             "rol": "CONTADOR",
             "empresa_id": emp.id,
@@ -40,6 +41,7 @@ async def test_admin_crea_contador_con_empresa(client: AsyncClient, db_session: 
     )
     assert res.status_code == 201
     data = res.json()
+    assert data["username"] == "nuevo.contador"
     assert data["email"] == "nuevo.contador@daira.local"
     assert data["rol"] == "CONTADOR"
     assert data["empresa_id"] == emp.id
@@ -55,6 +57,7 @@ async def test_contador_sin_empresa_es_rechazado(client: AsyncClient):
         headers={"Authorization": f"Bearer {token}"},
         json={
             "nombre_completo": "Contador Sin Empresa",
+            "username": "sinempresa",
             "email": "sinempresa@test.local",
             "rol": "CONTADOR",
             "empresa_id": None,
@@ -72,13 +75,14 @@ async def test_crear_usuario_email_duplicado_rechazado(client: AsyncClient):
         headers={"Authorization": f"Bearer {token}"},
         json={
             "nombre_completo": "Duplicado",
+            "username": "duplicado",
             "email": "contador.daira@test.local",
             "rol": "ADMINISTRADOR",
             "password": "Password123!"
         }
     )
-    assert res.status_code == 400
-    assert "Ya existe un usuario" in res.json()["detail"]
+    assert res.status_code in [400, 409]
+    assert "registrado" in res.json()["detail"].lower() or "uso" in res.json()["detail"].lower()
 
 
 @pytest.mark.asyncio

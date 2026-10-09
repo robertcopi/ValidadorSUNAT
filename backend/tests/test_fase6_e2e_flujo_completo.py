@@ -80,6 +80,7 @@ async def test_flujo_e2e_completo_casos_1_al_15(client: AsyncClient, db_session:
         headers={"Authorization": f"Bearer {token_admin}"},
         json={
             "nombre_completo": "Contador E2E DAIRA",
+            "username": "contador.e2e",
             "email": email_nuevo_contador,
             "rol": "CONTADOR",
             "empresa_id": emp_daira.id,

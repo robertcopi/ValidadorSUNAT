@@ -50,6 +50,7 @@ async def seed_data():
             usuarios_data = [
                 # Administrador Global (sin empresa_id para alcance omnisciente)
                 {
+                    "username": "admin",
                     "email": settings.SEED_ADMIN_EMAIL,
                     "nombre_completo": "Administrador General",
                     "rol": "ADMINISTRADOR",
@@ -58,6 +59,7 @@ async def seed_data():
                 },
                 # Contadores DAIRA
                 {
+                    "username": "contador1.daira",
                     "email": "contador1.daira@sistema.local",
                     "nombre_completo": "Contador 1 - DAIRA",
                     "rol": "CONTADOR",
@@ -65,6 +67,7 @@ async def seed_data():
                     "password_hash": contador_pwd_hash,
                 },
                 {
+                    "username": "contador2.daira",
                     "email": "contador2.daira@sistema.local",
                     "nombre_completo": "Contador 2 - DAIRA",
                     "rol": "CONTADOR",
@@ -73,6 +76,7 @@ async def seed_data():
                 },
                 # Contadores GRUPO JJD MAR
                 {
+                    "username": "contador1.jjdmar",
                     "email": "contador1.jjdmar@sistema.local",
                     "nombre_completo": "Contador 1 - GRUPO JJD MAR",
                     "rol": "CONTADOR",
@@ -80,6 +84,7 @@ async def seed_data():
                     "password_hash": contador_pwd_hash,
                 },
                 {
+                    "username": "contador2.jjdmar",
                     "email": "contador2.jjdmar@sistema.local",
                     "nombre_completo": "Contador 2 - GRUPO JJD MAR",
                     "rol": "CONTADOR",
@@ -94,6 +99,7 @@ async def seed_data():
                 user = result.scalar_one_or_none()
                 if not user:
                     user = Usuario(
+                        username=user_info["username"],
                         email=user_info["email"],
                         nombre_completo=user_info["nombre_completo"],
                         rol=user_info["rol"],
@@ -104,7 +110,8 @@ async def seed_data():
                     session.add(user)
                     print(f" [+] Usuario creado: {user.nombre_completo} ({user.email}) - Rol: {user.rol}")
                 else:
-                    # Sincronizar clave de desarrollo para que coincida con las credenciales documentadas
+                    # Sincronizar clave de desarrollo y username
+                    user.username = user_info["username"]
                     user.password_hash = user_info["password_hash"]
                     user.activo = True
                     print(f" [=] Usuario actualizado: {user.nombre_completo} ({user.email})")

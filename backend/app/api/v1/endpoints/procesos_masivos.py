@@ -14,6 +14,7 @@ from app.schemas.proceso_masivo import (
     PaginatedProcesoMasivoItemsResponse,
     PaginatedProcesosMasivosResponse,
     ReintentarErroresResponse,
+    EliminarProcesoMasivoResponse,
 )
 from app.services.proceso_masivo_service import (
     proceso_masivo_service,
@@ -136,15 +137,20 @@ async def listar_procesos_masivos(
     empresa: Optional[Empresa] = Depends(get_current_empresa),
     db: AsyncSession = Depends(get_db),
 ) -> PaginatedProcesosMasivosResponse:
-    if not empresa:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Debe tener una empresa asociada para listar procesos masivos."
-        )
+    if current_user.rol == "CONTADOR":
+        if not empresa:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="El contador debe tener una empresa asociada para listar procesos masivos."
+            )
+        target_empresa_id = empresa.id
+    else:
+        # Rol ADMINISTRADOR: Si seleccionó empresa por cabecera X-Empresa-Id usa esa, si no usa None (Visión Consolidada)
+        target_empresa_id = empresa.id if empresa else None
 
     return await proceso_masivo_service.listar_procesos(
         db=db,
-        empresa_id=empresa.id,
+        empresa_id=target_empresa_id,
         page=page,
         page_size=page_size,
         fecha_desde=fecha_desde,
@@ -335,4 +341,65 @@ async def exportar_proceso_excel(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error inesperado al exportar proceso a Excel: {str(e)}"
         )
+
+
+@router.delete(
+    "/{id}",
+    response_model=EliminarProcesoMasivoResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Eliminar un proceso masivo de validación de prueba",
+    description="""
+    Elimina un lote masivo completo y sus registros dependientes exclusivos en una transacción atómica.
+    Registra el evento en auditoría permanente.
+    En entorno de producción, restringe la acción exclusivamente al ADMINISTRADOR.
+    NO realiza llamadas HTTP a SUNAT.
+    """
+)
+async def eliminar_proceso_masivo(
+    id: str,
+    request: Request,
+    current_user: Usuario = Depends(require_role(["CONTADOR", "ADMINISTRADOR"])),
+    empresa: Optional[Empresa] = Depends(get_current_empresa),
+    db: AsyncSession = Depends(get_db),
+) -> EliminarProcesoMasivoResponse:
+    if current_user.rol == "CONTADOR":
+        if not empresa:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="El contador debe tener una empresa asociada para eliminar procesos masivos."
+            )
+        target_empresa_id = empresa.id
+    else:
+        # Administrador: si tiene empresa en cabecera/sesión usa esa, si no busca la empresa del proceso
+        if empresa:
+            target_empresa_id = empresa.id
+        else:
+            proc_stmt = select(ProcesoMasivo.empresa_id).where(ProcesoMasivo.id == id)
+            proc_res = await db.execute(proc_stmt)
+            target_empresa_id = proc_res.scalar_one_or_none()
+            if not target_empresa_id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"No se encontró el proceso masivo con ID '{id}'."
+                )
+
+    try:
+        resultado = await proceso_masivo_service.eliminar_proceso(
+            db=db,
+            proceso_id=id,
+            empresa_id=target_empresa_id,
+            usuario=current_user,
+            client_ip=request.client.host if request.client else None,
+        )
+        return resultado
+    except ProcesoMasivoException as pe:
+        await db.rollback()
+        raise HTTPException(status_code=pe.status_code, detail=pe.message)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error inesperado al eliminar proceso masivo: {str(e)}"
+        )
+
 

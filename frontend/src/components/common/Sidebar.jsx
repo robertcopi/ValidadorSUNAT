@@ -77,6 +77,14 @@ export const Sidebar = () => {
           <span>Historial</span>
         </NavLink>
 
+        <NavLink
+          to="/ssco"
+          className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+        >
+          <ShieldAlert size={18} />
+          <span>Verificación SSCO</span>
+        </NavLink>
+
         <span className="sidebar-section-title" style={{ marginTop: '0.75rem' }}>Cuenta</span>
 
         <NavLink

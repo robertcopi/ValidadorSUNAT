@@ -10,6 +10,7 @@ import { CargaMasiva } from './pages/CargaMasiva';
 import { Historial } from './pages/Historial';
 import { DetalleProceso } from './pages/DetalleProceso';
 import { Perfil } from './pages/Perfil';
+import { ConsultaSSCO } from './pages/ConsultaSSCO';
 import { UsuariosAdmin } from './pages/UsuariosAdmin';
 import { EmpresasAdmin } from './pages/EmpresasAdmin';
 import { AuditoriaAdmin } from './pages/AuditoriaAdmin';
@@ -35,6 +36,7 @@ export const App = () => {
             <Route path="carga-masiva" element={<CargaMasiva />} />
             <Route path="historial" element={<Historial />} />
             <Route path="historial/:procesoId" element={<DetalleProceso />} />
+            <Route path="ssco" element={<ConsultaSSCO />} />
             <Route path="perfil" element={<Perfil />} />
 
             {/* Módulos de Administración (Exclusivos para ADMINISTRADOR) */}

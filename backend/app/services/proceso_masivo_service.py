@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Dict, List, Optional, Tuple, Any
 
 import httpx
-from sqlalchemy import select, func, desc, or_, case, update
+from sqlalchemy import select, func, desc, or_, case, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import io
@@ -31,6 +31,7 @@ from app.schemas.proceso_masivo import (
     PaginatedProcesoMasivoItemsResponse,
     PaginatedProcesosMasivosResponse,
     ReintentarErroresResponse,
+    EliminarProcesoMasivoResponse,
 )
 from app.schemas.dashboard import DashboardResumenResponse
 from app.services.sunat_service import (
@@ -38,6 +39,7 @@ from app.services.sunat_service import (
     SunatException,
     SunatCredentialsError,
 )
+from app.services.audit_service import audit_service
 
 logger = logging.getLogger(__name__)
 
@@ -532,6 +534,144 @@ class ProcesoMasivoService:
             estado="PROCESANDO",
         )
 
+    async def eliminar_proceso(
+        self,
+        db: AsyncSession,
+        proceso_id: str,
+        empresa_id: int,
+        usuario: Usuario,
+        client_ip: Optional[str] = None,
+    ) -> EliminarProcesoMasivoResponse:
+        """
+        Elimina un lote/proceso masivo y sus registros dependientes exclusivos en una transacción atómica:
+        1. Valida tenancy (empresa_id).
+        2. Aplica restricción por entorno: en producción se restringe exclusivamente al ADMINISTRADOR.
+        3. Cancela la tarea asíncrona si aún está en ejecución.
+        4. Identifica las consultas_cpe asociadas exclusivamente a este proceso.
+        5. Registra auditoría con acción ELIMINAR_LOTE_PRUEBA (permanece en BD).
+        6. Elimina los items del proceso masivo.
+        7. Elimina las consultas_cpe exclusivas.
+        8. Elimina el registro padre ProcesoMasivo.
+        9. Commit atómico (rollback ante cualquier fallo).
+        10. 0 llamadas a SUNAT.
+        """
+        # 1. Restricción por entorno
+        env = getattr(settings, "ENVIRONMENT", "development").lower()
+        debug_mode = getattr(settings, "DEBUG", True)
+        is_production = env == "production" and not debug_mode
+
+        if is_production and usuario.rol != "ADMINISTRADOR":
+            raise ProcesoMasivoException(
+                message="En entorno de producción, la eliminación física de lotes está restringida exclusivamente a usuarios administradores.",
+                status_code=403
+            )
+
+        # 2. Validar tenancy y existencia del proceso
+        stmt_proc = select(ProcesoMasivo).where(
+            ProcesoMasivo.id == proceso_id,
+            ProcesoMasivo.empresa_id == empresa_id
+        )
+        res_proc = await db.execute(stmt_proc)
+        proceso = res_proc.scalar_one_or_none()
+        if not proceso:
+            raise ProcesoMasivoException(
+                message=f"No se encontró el proceso masivo con ID '{proceso_id}' para su empresa.",
+                status_code=404
+            )
+
+        # 3. Cancelar worker en segundo plano si está activo
+        task = self._active_tasks.get(proceso_id)
+        if task and not task.done():
+            task.cancel()
+            self._active_tasks.pop(proceso_id, None)
+
+        # 4. Obtener los IDs de consultas_cpe asociadas a los items de este proceso
+        stmt_cpe_ids = select(ProcesoMasivoItem.consulta_cpe_id).where(
+            ProcesoMasivoItem.proceso_id == proceso_id,
+            ProcesoMasivoItem.consulta_cpe_id.is_not(None)
+        )
+        res_cpe = await db.execute(stmt_cpe_ids)
+        cpe_ids = [cid for cid in res_cpe.scalars().all() if cid is not None]
+
+        # Verificar si alguna consulta_cpe es referenciada por otro proceso distinto (aislamiento estricto)
+        ids_cpe_a_eliminar = []
+        if cpe_ids:
+            stmt_shared = select(ProcesoMasivoItem.consulta_cpe_id).where(
+                ProcesoMasivoItem.proceso_id != proceso_id,
+                ProcesoMasivoItem.consulta_cpe_id.in_(cpe_ids)
+            )
+            res_shared = await db.execute(stmt_shared)
+            shared_ids = set(res_shared.scalars().all())
+            ids_cpe_a_eliminar = [cid for cid in cpe_ids if cid not in shared_ids]
+
+        # 5. Obtener total de items
+        stmt_count = select(func.count(ProcesoMasivoItem.id)).where(ProcesoMasivoItem.proceso_id == proceso_id)
+        total_items_eliminados = (await db.execute(stmt_count)).scalar() or 0
+
+        nombre_archivo = proceso.nombre_archivo
+        total_registros = proceso.total_registros
+        total_procesados = proceso.total_procesados
+        estado_previo = proceso.estado
+
+        # 6. Registrar evento de auditoría permanente (commit=False para persistir en la misma transacción)
+        await audit_service.registrar_evento(
+            db=db,
+            accion="ELIMINAR_LOTE_PRUEBA",
+            entidad="proceso_masivo",
+            entidad_id=proceso.id,
+            usuario_id=usuario.id,
+            empresa_id=empresa_id,
+            detalle={
+                "nombre_archivo": nombre_archivo,
+                "total_registros": total_registros,
+                "total_procesados": total_procesados,
+                "estado_previo": estado_previo,
+                "items_eliminados": total_items_eliminados,
+                "consultas_cpe_eliminadas": len(ids_cpe_a_eliminar),
+            },
+            ip=client_ip,
+            commit=False,
+        )
+
+        # 7. Eliminar items del proceso
+        await db.execute(
+            delete(ProcesoMasivoItem).where(ProcesoMasivoItem.proceso_id == proceso_id)
+        )
+
+        # 8. Eliminar consultas_cpe exclusivas
+        if ids_cpe_a_eliminar:
+            await db.execute(
+                delete(ConsultaCPE).where(
+                    ConsultaCPE.id.in_(ids_cpe_a_eliminar),
+                    ConsultaCPE.empresa_id == empresa_id
+                )
+            )
+
+        # 9. Eliminar el proceso masivo padre
+        await db.execute(
+            delete(ProcesoMasivo).where(
+                ProcesoMasivo.id == proceso_id,
+                ProcesoMasivo.empresa_id == empresa_id
+            )
+        )
+
+        # 10. Commit transaccional
+        await db.commit()
+
+        logger.info(
+            "Proceso masivo %s eliminado exitosamente por usuario %s (%d items, %d consultas_cpe).",
+            proceso_id, usuario.id, total_items_eliminados, len(ids_cpe_a_eliminar)
+        )
+
+        return EliminarProcesoMasivoResponse(
+            success=True,
+            mensaje="Lote eliminado correctamente.",
+            proceso_id=proceso_id,
+            nombre_archivo=nombre_archivo,
+            items_eliminados=total_items_eliminados,
+            consultas_cpe_eliminadas=len(ids_cpe_a_eliminar),
+        )
+
     async def obtener_proceso(
         self,
         db: AsyncSession,
@@ -573,7 +713,7 @@ class ProcesoMasivoService:
     async def listar_procesos(
         self,
         db: AsyncSession,
-        empresa_id: int,
+        empresa_id: Optional[int] = None,
         page: int = 1,
         page_size: int = 10,
         fecha_desde: Optional[datetime.date] = None,
@@ -581,12 +721,14 @@ class ProcesoMasivoService:
         nombre_archivo: Optional[str] = None,
         estado: Optional[str] = None,
     ) -> PaginatedProcesosMasivosResponse:
-        """Lista los procesos masivos paginados para la empresa autenticada con filtros opcionales."""
+        """Lista los procesos masivos paginados para la empresa autenticada o consolidados con filtros opcionales."""
         page = max(1, page)
         page_size = min(max(1, page_size), 100)
         offset = (page - 1) * page_size
 
-        conditions = [ProcesoMasivo.empresa_id == empresa_id]
+        conditions = []
+        if empresa_id is not None:
+            conditions.append(ProcesoMasivo.empresa_id == empresa_id)
         if fecha_desde:
             conditions.append(func.date(ProcesoMasivo.created_at) >= fecha_desde)
         if fecha_hasta:
@@ -1009,7 +1151,7 @@ class ProcesoMasivoService:
     async def obtener_resumen_dashboard(
         self,
         db: AsyncSession,
-        empresa_id: int,
+        empresa_id: Optional[int] = None,
         fecha_desde: Optional[datetime.date] = None,
         fecha_hasta: Optional[datetime.date] = None,
         estado: Optional[str] = None,
@@ -1018,9 +1160,11 @@ class ProcesoMasivoService:
         """
         Obtiene el resumen estadístico agregado para el Dashboard en PostgreSQL.
         Soporta filtros opcionales de fecha, estado y proceso.
-        Filtra estrictamente por la empresa autenticada.
+        Filtra por empresa_id o consolida todas las empresas si empresa_id es None.
         """
-        conditions = [ProcesoMasivo.empresa_id == empresa_id]
+        conditions = []
+        if empresa_id is not None:
+            conditions.append(ProcesoMasivo.empresa_id == empresa_id)
         if proceso_id and proceso_id.strip():
             conditions.append(ProcesoMasivo.id == proceso_id.strip())
         if fecha_desde:
@@ -1054,7 +1198,9 @@ class ProcesoMasivoService:
 
         # Si no se filtra por proceso específico, agregamos consultas_cpe independientes (no vinculadas a proceso)
         if not proceso_id:
-            cpe_conditions = [ConsultaCPE.empresa_id == empresa_id]
+            cpe_conditions = []
+            if empresa_id is not None:
+                cpe_conditions.append(ConsultaCPE.empresa_id == empresa_id)
             if fecha_desde:
                 cpe_conditions.append(func.date(ConsultaCPE.created_at) >= fecha_desde)
             if fecha_hasta:

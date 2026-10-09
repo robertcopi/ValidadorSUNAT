@@ -8,6 +8,24 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+# Asegurar compatibilidad en entornos Windows donde AppLocker/WDAC bloquea DLLs/pyd de Cython en SQLAlchemy
+from importlib.abc import MetaPathFinder
+from importlib.util import spec_from_file_location
+import os
+
+class _PurePythonFinder(MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        if "sqlalchemy" in fullname and fullname.endswith("_cy"):
+            if path:
+                for p in path:
+                    mod_name = fullname.split(".")[-1]
+                    py_file = os.path.join(p, f"{mod_name}.py")
+                    if os.path.isfile(py_file):
+                        return spec_from_file_location(fullname, py_file)
+        return None
+
+sys.meta_path.insert(0, _PurePythonFinder())
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -67,6 +85,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         test_pwd = get_password_hash("Password123!")
 
         admin = Usuario(
+            username="admin",
             email="admin@test.local",
             nombre_completo="Admin Test",
             rol="ADMINISTRADOR",
@@ -75,6 +94,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             activo=True
         )
         contador_daira = Usuario(
+            username="contador.daira",
             email="contador.daira@test.local",
             nombre_completo="Contador DAIRA Test",
             rol="CONTADOR",
@@ -83,6 +103,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
             activo=True
         )
         contador_jjd = Usuario(
+            username="contador.jjd",
             email="contador.jjd@test.local",
             nombre_completo="Contador JJD Test",
             rol="CONTADOR",

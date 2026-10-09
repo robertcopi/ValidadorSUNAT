@@ -15,6 +15,10 @@ import {
   AlertCircle,
   Loader2,
   Building2,
+  Trash2,
+  AlertTriangle,
+  X,
+  CheckCircle2,
 } from 'lucide-react';
 
 export const Historial = () => {
@@ -24,6 +28,12 @@ export const Historial = () => {
   const [procesos, setProcesos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Estado para modal de eliminación de lote de prueba
+  const [loteAEliminar, setLoteAEliminar] = useState(null);
+  const [eliminando, setEliminando] = useState(false);
+  const [mensajeExito, setMensajeExito] = useState('');
+  const [errorEliminar, setErrorEliminar] = useState('');
 
   // Paginación
   const [page, setPage] = useState(1);
@@ -36,6 +46,25 @@ export const Historial = () => {
   const [estado, setEstado] = useState('');
   const [fechaDesde, setFechaDesde] = useState('');
   const [fechaHasta, setFechaHasta] = useState('');
+
+  const handleConfirmarEliminar = async () => {
+    if (!loteAEliminar) return;
+    setEliminando(true);
+    setErrorEliminar('');
+    try {
+      await axiosClient.delete(`/procesos-masivos/${loteAEliminar.id}`);
+      setLoteAEliminar(null);
+      setMensajeExito('Lote eliminado correctamente.');
+      setTimeout(() => setMensajeExito(''), 4500);
+      cargarHistorial();
+    } catch (err) {
+      console.error('Error al eliminar lote:', err);
+      const msg = err.response?.data?.detail || 'Error al eliminar el lote de prueba.';
+      setErrorEliminar(msg);
+    } finally {
+      setEliminando(false);
+    }
+  };
 
   const cargarHistorial = async () => {
     try {
@@ -140,6 +169,29 @@ export const Historial = () => {
         >
           <AlertCircle size={20} />
           <span>{error}</span>
+        </div>
+      )}
+
+      {/* Alerta de Éxito al eliminar lote */}
+      {mensajeExito && (
+        <div
+          style={{
+            marginBottom: '1.25rem',
+            padding: '0.85rem 1.25rem',
+            backgroundColor: '#f0fdf4',
+            border: '1px solid #bbf7d0',
+            borderRadius: '8px',
+            color: '#15803d',
+            fontSize: '0.875rem',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.6rem',
+            boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+          }}
+        >
+          <CheckCircle2 size={18} color="#16a34a" />
+          <span>{mensajeExito}</span>
         </div>
       )}
 
@@ -513,27 +565,53 @@ export const Historial = () => {
                         </span>
                       </td>
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
-                        <button
-                          onClick={() => navigate(`/historial/${p.id}`)}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.35rem',
-                            padding: '0.4rem 0.75rem',
-                            fontSize: '0.785rem',
-                            fontWeight: '600',
-                            borderRadius: '6px',
-                            border: '1px solid #cbd5e1',
-                            backgroundColor: '#ffffff',
-                            color: 'var(--color-primary, #1e40af)',
-                            cursor: 'pointer',
-                            transition: 'all 0.15s ease',
-                          }}
-                          title="Ver detalle y resultados del proceso"
-                        >
-                          <Eye size={14} />
-                          <span>Ver resultados</span>
-                        </button>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'center' }}>
+                          <button
+                            onClick={() => navigate(`/historial/${p.id}`)}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
+                              padding: '0.4rem 0.75rem',
+                              fontSize: '0.785rem',
+                              fontWeight: '600',
+                              borderRadius: '6px',
+                              border: '1px solid #cbd5e1',
+                              backgroundColor: '#ffffff',
+                              color: 'var(--color-primary, #1e40af)',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                            }}
+                            title="Ver detalle y resultados del proceso"
+                          >
+                            <Eye size={14} />
+                            <span>Ver resultados</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setErrorEliminar('');
+                              setLoteAEliminar(p);
+                            }}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              padding: '0.4rem 0.65rem',
+                              fontSize: '0.785rem',
+                              fontWeight: '600',
+                              borderRadius: '6px',
+                              border: '1px solid #fecaca',
+                              backgroundColor: '#fef2f2',
+                              color: '#dc2626',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                            }}
+                            title="Eliminar lote de prueba"
+                          >
+                            <Trash2 size={13} />
+                            <span>Eliminar</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -556,6 +634,118 @@ export const Historial = () => {
           }}
         />
       </div>
+
+      {/* Modal de Confirmación para Eliminar Lote de Prueba */}
+      {loteAEliminar && (
+        <div className="modal-overlay" style={{ zIndex: 1100 }}>
+          <div className="modal-content" style={{ maxWidth: '460px' }}>
+            <div className="modal-header">
+              <div className="modal-title" style={{ color: '#b91c1c' }}>
+                <AlertTriangle size={20} color="#dc2626" />
+                <span>Eliminar lote de prueba</span>
+              </div>
+              <button
+                onClick={() => !eliminando && setLoteAEliminar(null)}
+                disabled={eliminando}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: eliminando ? 'not-allowed' : 'pointer',
+                  color: '#64748b',
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body">
+              {errorEliminar && (
+                <div
+                  style={{
+                    padding: '0.75rem',
+                    marginBottom: '1rem',
+                    backgroundColor: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    borderRadius: '6px',
+                    color: '#991b1b',
+                    fontSize: '0.825rem',
+                  }}
+                >
+                  {errorEliminar}
+                </div>
+              )}
+
+              <div
+                style={{
+                  marginBottom: '1.25rem',
+                  backgroundColor: '#f8fafc',
+                  padding: '0.85rem 1rem',
+                  borderRadius: '6px',
+                  border: '1px solid #e2e8f0',
+                }}
+              >
+                <div style={{ marginBottom: '0.5rem', fontSize: '0.825rem', color: '#475569' }}>
+                  <span style={{ display: 'block', color: '#64748b', fontSize: '0.75rem' }}>Archivo:</span>
+                  <strong style={{ color: '#0f172a' }}>{loteAEliminar.nombre_archivo || 'Lote sin nombre'}</strong>
+                </div>
+                <div style={{ fontSize: '0.825rem', color: '#475569' }}>
+                  <span style={{ display: 'block', color: '#64748b', fontSize: '0.75rem' }}>Comprobantes:</span>
+                  <strong style={{ color: '#0f172a' }}>{loteAEliminar.total_registros}</strong>
+                </div>
+              </div>
+
+              <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.85rem', color: '#334155' }}>
+                Esta acción eliminará este lote y sus registros asociados.
+              </p>
+              <p style={{ margin: 0, fontSize: '0.825rem', color: '#dc2626', fontWeight: '600' }}>
+                Esta acción no se puede deshacer.
+              </p>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                type="button"
+                disabled={eliminando}
+                onClick={() => setLoteAEliminar(null)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  backgroundColor: '#ffffff',
+                  color: '#334155',
+                  fontSize: '0.825rem',
+                  fontWeight: '600',
+                  cursor: eliminando ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={eliminando}
+                onClick={handleConfirmarEliminar}
+                style={{
+                  padding: '0.5rem 1.1rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: '#dc2626',
+                  color: '#ffffff',
+                  fontSize: '0.825rem',
+                  fontWeight: '600',
+                  cursor: eliminando ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  boxShadow: '0 1px 2px rgba(220, 38, 38, 0.2)',
+                }}
+              >
+                {eliminando ? <Loader2 size={15} className="spin" /> : <Trash2 size={15} />}
+                <span>{eliminando ? 'Eliminando...' : 'Eliminar lote'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

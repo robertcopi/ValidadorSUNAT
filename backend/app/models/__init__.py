@@ -6,6 +6,7 @@ from app.models.consulta_cpe import ConsultaCPE
 from app.models.proceso_masivo import ProcesoMasivo
 from app.models.proceso_masivo_item import ProcesoMasivoItem
 from app.models.auditoria_evento import AuditoriaEvento
+from app.models.padron_ssco import PadronSSCO, PadronSSCOSincronizacion, ConsultaSSCO
 
 __all__ = [
     "Base",
@@ -16,4 +17,7 @@ __all__ = [
     "ProcesoMasivo",
     "ProcesoMasivoItem",
     "AuditoriaEvento",
+    "PadronSSCO",
+    "PadronSSCOSincronizacion",
+    "ConsultaSSCO",
 ]

@@ -13,8 +13,17 @@ class ItemProcesoMasivo(BaseModel):
     numero: str = Field(..., max_length=20, description="Número correlativo del comprobante")
     fecha_emision: str = Field(..., description="Fecha de emisión en formato DD/MM/YYYY")
     monto_original: Optional[Decimal] = Field(None, description="Monto contable original (conserva signo ej. notas de crédito)")
-    monto: Decimal = Field(..., ge=0, description="Monto en valor absoluto positivo")
+    monto: Decimal = Field(..., ge=0, description="Monto en valor absoluto positivo para SUNAT (abs(monto_base_igv))")
     razon_social: Optional[str] = None
+    base_imponible: Optional[Decimal] = None
+    igv: Optional[Decimal] = None
+    monto_base_igv: Optional[Decimal] = None
+    valor_adquisiciones_no_gravadas: Optional[Decimal] = None
+    monto_calculado_original: Optional[Decimal] = None
+    tipo_cambio: Optional[Decimal] = None
+    monto_convertido: Optional[Decimal] = None
+    importe_total_excel: Optional[Decimal] = None
+    otros_tributos: Optional[Decimal] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -41,6 +50,8 @@ class ProcesoMasivoItemResponse(BaseModel):
     monto_original: Optional[Decimal] = None
     monto: Decimal
     razon_social: Optional[str] = None
+    tipo_cambio: Optional[Decimal] = None
+    monto_convertido: Optional[Decimal] = None
     estado: str  # PENDIENTE | PROCESANDO | VALIDO | NO_VALIDO | OBSERVADO | ERROR
     estado_sunat: Optional[str] = None
     codigo_sunat: Optional[str] = None
@@ -111,3 +122,16 @@ class ReintentarErroresResponse(BaseModel):
     estado: str
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class EliminarProcesoMasivoResponse(BaseModel):
+    """Respuesta tras eliminar exitosamente un proceso masivo y sus registros asociados."""
+    success: bool = True
+    mensaje: str = "Lote eliminado correctamente."
+    proceso_id: str
+    nombre_archivo: Optional[str] = None
+    items_eliminados: int = 0
+    consultas_cpe_eliminadas: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
+

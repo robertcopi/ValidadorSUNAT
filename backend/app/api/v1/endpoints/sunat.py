@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,15 +8,18 @@ from app.api.deps import get_current_user, get_current_empresa, require_role
 from app.models.usuario import Usuario
 from app.models.empresa import Empresa
 from app.models.consulta_cpe import ConsultaCPE
+from app.models.proceso_masivo_item import ProcesoMasivoItem
 from app.schemas.sunat import (
     ComprobanteValidarRequest,
     ConsultaCPEResponse,
+    EliminarConsultaCPEResponse,
     EmpresaInfo,
     TIPO_COMPROBANTE_MAP
 )
 from app.schemas.proceso_masivo import CrearProcesoMasivoRequest, ProcesoMasivoResponse
 from app.services.sunat_service import sunat_service, SunatException, SunatCredentialsError
 from app.services.proceso_masivo_service import proceso_masivo_service, ProcesoMasivoException
+from app.services.audit_service import audit_service
 
 router = APIRouter()
 
@@ -88,21 +91,30 @@ async def listar_consultas_recientes(
     empresa: Optional[Empresa] = Depends(get_current_empresa),
     db: AsyncSession = Depends(get_db)
 ):
-    if not empresa:
-        return []
+    if current_user.rol == "CONTADOR":
+        if not empresa:
+            return []
+        stmt = (
+            select(ConsultaCPE)
+            .where(ConsultaCPE.empresa_id == empresa.id)
+            .order_by(desc(ConsultaCPE.created_at))
+            .limit(min(limit, 50))
+        )
+    else:
+        # Administrador: si seleccionó empresa filtra por esa, si no consolida todas
+        stmt = select(ConsultaCPE)
+        if empresa:
+            stmt = stmt.where(ConsultaCPE.empresa_id == empresa.id)
+        stmt = stmt.order_by(desc(ConsultaCPE.created_at)).limit(min(limit, 50))
 
-    stmt = (
-        select(ConsultaCPE)
-        .where(ConsultaCPE.empresa_id == empresa.id)
-        .order_by(desc(ConsultaCPE.created_at))
-        .limit(min(limit, 50))
-    )
     result = await db.execute(stmt)
     consultas = result.scalars().all()
 
     response = []
     for c in consultas:
         tipo_desc = TIPO_COMPROBANTE_MAP.get(c.tipo_comprobante, c.tipo_comprobante)
+        emp_ruc = c.empresa.ruc if c.empresa else (empresa.ruc if empresa else "-")
+        emp_razon = c.empresa.razon_social if c.empresa else (empresa.razon_social if empresa else "General")
         response.append(
             ConsultaCPEResponse(
                 id=c.id,
@@ -119,13 +131,111 @@ async def listar_consultas_recientes(
                 codigo_sunat=c.codigo_sunat,
                 mensaje_sunat=c.mensaje_sunat,
                 empresa_consultora=EmpresaInfo(
-                    ruc=empresa.ruc,
-                    razon_social=empresa.razon_social
+                    ruc=emp_ruc,
+                    razon_social=emp_razon
                 ),
                 created_at=c.created_at
             )
         )
     return response
+
+
+@router.delete(
+    "/consultas/{consulta_id}",
+    response_model=EliminarConsultaCPEResponse,
+    summary="Eliminar consulta individual de comprobante",
+    description="""
+    Elimina permanentemente una consulta individual específica de consultas_cpe.
+    - Valida pertenencia multiempresa de forma estricta mediante el JWT o contexto administrativo.
+    - Impide eliminar consultas vinculadas a procesos masivos (HTTP 409).
+    - Si no existe o pertenece a otra empresa, responde HTTP 404 (evita enumeración de IDs).
+    - Registra auditoría inmutable en auditoria_eventos con acción ELIMINAR_CONSULTA_INDIVIDUAL.
+    - CERO llamadas HTTP a SUNAT.
+    """
+)
+async def eliminar_consulta_individual(
+    consulta_id: int,
+    request: Request,
+    current_user: Usuario = Depends(require_role(["CONTADOR", "ADMINISTRADOR"])),
+    empresa: Optional[Empresa] = Depends(get_current_empresa),
+    db: AsyncSession = Depends(get_db),
+) -> EliminarConsultaCPEResponse:
+    # 1. Buscar la consulta por ID
+    stmt = select(ConsultaCPE).where(ConsultaCPE.id == consulta_id)
+    result = await db.execute(stmt)
+    consulta = result.scalar_one_or_none()
+
+    if not consulta:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No se encontró la consulta de comprobante solicitada."
+        )
+
+    # 2. Validación multiempresa estricta
+    if current_user.rol == "CONTADOR":
+        if not empresa or consulta.empresa_id != empresa.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No se encontró la consulta de comprobante solicitada."
+            )
+    else:
+        # ADMINISTRADOR: si seleccionó un contexto de empresa (X-Empresa-Id o empresa asignada)
+        if empresa and consulta.empresa_id != empresa.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No se encontró la consulta de comprobante solicitada."
+            )
+
+    # 3. Validar que NO esté vinculada a un proceso masivo
+    stmt_masivo = select(ProcesoMasivoItem.id).where(ProcesoMasivoItem.consulta_cpe_id == consulta_id).limit(1)
+    res_masivo = await db.execute(stmt_masivo)
+    if res_masivo.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Esta consulta pertenece a un lote masivo y no puede eliminarse individualmente."
+        )
+
+    try:
+        # 4. Registrar auditoría inmutable
+        await audit_service.registrar_evento(
+            db=db,
+            accion="ELIMINAR_CONSULTA_INDIVIDUAL",
+            entidad="consultas_cpe",
+            entidad_id=str(consulta.id),
+            usuario_id=current_user.id,
+            empresa_id=consulta.empresa_id,
+            detalle={
+                "consulta_id": consulta.id,
+                "usuario_email": current_user.email,
+                "empresa_id": consulta.empresa_id,
+                "tipo_comprobante": consulta.tipo_comprobante,
+                "serie": consulta.serie,
+                "numero": consulta.numero,
+                "ruc_emisor": consulta.ruc_emisor,
+                "fecha_emision": consulta.fecha_emision.isoformat() if consulta.fecha_emision else None,
+                "monto": str(consulta.monto) if consulta.monto is not None else None,
+                "estado": consulta.estado,
+            },
+            ip=request.client.host if request.client else None,
+            commit=False,
+        )
+
+        # 5. Eliminar registro de consultas_cpe
+        await db.delete(consulta)
+
+        # 6. Commit transaccional atómico
+        await db.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error inesperado al eliminar la consulta de comprobante: {str(e)}"
+        )
+
+    return EliminarConsultaCPEResponse(message="Consulta eliminada correctamente")
+
 
 
 @router.post(

@@ -137,3 +137,8 @@ class ConsultaCPEResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class EliminarConsultaCPEResponse(BaseModel):
+    """Schema de respuesta para la eliminación de una consulta individual."""
+    message: str

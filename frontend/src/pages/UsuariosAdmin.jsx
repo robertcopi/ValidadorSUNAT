@@ -35,9 +35,36 @@ export const UsuariosAdmin = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
 
+  const extraerMensajeError = (err, defaultMsg = 'Error al procesar la solicitud.') => {
+    const detail = err.response?.data?.detail;
+    if (!detail) {
+      return defaultMsg;
+    }
+    if (typeof detail === 'string') {
+      if (
+        detail.includes('SQL') ||
+        detail.includes('Traceback') ||
+        detail.includes('IntegrityError') ||
+        detail.includes('asyncpg') ||
+        detail.includes('syntax error')
+      ) {
+        return defaultMsg;
+      }
+      return detail;
+    }
+    if (Array.isArray(detail)) {
+      const msgs = detail.map((d) => d.msg || d.message).filter(Boolean);
+      if (msgs.length > 0) {
+        return msgs.join('. ');
+      }
+    }
+    return defaultMsg;
+  };
+
   // Formulario Crear
   const [createData, setCreateData] = useState({
     nombre_completo: '',
+    username: '',
     email: '',
     rol: 'CONTADOR',
     empresa_id: '',
@@ -48,6 +75,7 @@ export const UsuariosAdmin = () => {
   const [selectedUser, setSelectedUser] = useState(null);
   const [editData, setEditData] = useState({
     nombre_completo: '',
+    username: '',
     email: '',
     rol: 'CONTADOR',
     empresa_id: '',
@@ -75,8 +103,7 @@ export const UsuariosAdmin = () => {
       setEmpresas(resEmpresas.data || []);
     } catch (err) {
       console.error('Error al cargar datos de usuarios:', err);
-      const msg = err.response?.data?.detail || 'Error al cargar usuarios y empresas.';
-      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      setError(extraerMensajeError(err, 'Error al cargar usuarios y empresas.'));
     } finally {
       setLoading(false);
     }
@@ -90,6 +117,14 @@ export const UsuariosAdmin = () => {
     e.preventDefault();
     setModalError('');
 
+    const usernameClean = createData.username.trim().toLowerCase();
+    const emailClean = createData.email.trim().toLowerCase();
+
+    if (!usernameClean) {
+      setModalError('El nombre de usuario es obligatorio.');
+      return;
+    }
+
     if (createData.rol === 'CONTADOR' && !createData.empresa_id) {
       setModalError('Un usuario con rol CONTADOR debe pertenecer obligatoriamente a una empresa.');
       return;
@@ -99,7 +134,8 @@ export const UsuariosAdmin = () => {
       setActionLoading(true);
       const payload = {
         nombre_completo: createData.nombre_completo.trim(),
-        email: createData.email.trim().toLowerCase(),
+        username: usernameClean,
+        email: emailClean,
         rol: createData.rol,
         empresa_id: createData.empresa_id ? parseInt(createData.empresa_id, 10) : null,
         password: createData.password,
@@ -110,6 +146,7 @@ export const UsuariosAdmin = () => {
       setShowCreateModal(false);
       setCreateData({
         nombre_completo: '',
+        username: '',
         email: '',
         rol: 'CONTADOR',
         empresa_id: '',
@@ -117,8 +154,8 @@ export const UsuariosAdmin = () => {
       });
       cargarDatos();
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Error al crear el usuario.';
-      setModalError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      const msg = extraerMensajeError(err, 'Error al crear el usuario. Inténtalo nuevamente.');
+      setModalError(msg);
     } finally {
       setActionLoading(false);
     }
@@ -128,6 +165,7 @@ export const UsuariosAdmin = () => {
     setSelectedUser(u);
     setEditData({
       nombre_completo: u.nombre_completo,
+      username: u.username || '',
       email: u.email,
       rol: u.rol,
       empresa_id: u.empresa_id ? String(u.empresa_id) : '',
@@ -149,6 +187,7 @@ export const UsuariosAdmin = () => {
       setActionLoading(true);
       const payload = {
         nombre_completo: editData.nombre_completo.trim(),
+        username: editData.username.trim().toLowerCase(),
         email: editData.email.trim().toLowerCase(),
         rol: editData.rol,
         empresa_id: editData.empresa_id ? parseInt(editData.empresa_id, 10) : (editData.rol === 'ADMINISTRADOR' ? 0 : null),
@@ -158,8 +197,8 @@ export const UsuariosAdmin = () => {
       setShowEditModal(false);
       cargarDatos();
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Error al actualizar usuario.';
-      setModalError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      const msg = extraerMensajeError(err, 'Error al actualizar usuario. Inténtalo nuevamente.');
+      setModalError(msg);
     } finally {
       setActionLoading(false);
     }
@@ -177,8 +216,8 @@ export const UsuariosAdmin = () => {
       });
       cargarDatos();
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Error al cambiar estado del usuario.';
-      alert(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      const msg = extraerMensajeError(err, 'Error al cambiar estado del usuario.');
+      alert(msg);
     }
   };
 
@@ -202,8 +241,8 @@ export const UsuariosAdmin = () => {
       setTempPassword(res.data.temporary_password);
       cargarDatos();
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Error al restablecer la contraseña.';
-      setModalError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      const msg = extraerMensajeError(err, 'Error al restablecer la contraseña.');
+      setModalError(msg);
     } finally {
       setActionLoading(false);
     }
@@ -228,9 +267,10 @@ export const UsuariosAdmin = () => {
     if (busqueda.trim()) {
       const term = busqueda.toLowerCase();
       const matchNom = u.nombre_completo.toLowerCase().includes(term);
+      const matchUsername = u.username?.toLowerCase().includes(term);
       const matchEmail = u.email.toLowerCase().includes(term);
       const matchEmp = u.empresa?.razon_social?.toLowerCase().includes(term);
-      if (!matchNom && !matchEmail && !matchEmp) return false;
+      if (!matchNom && !matchUsername && !matchEmail && !matchEmp) return false;
     }
     return true;
   });
@@ -361,7 +401,9 @@ export const UsuariosAdmin = () => {
                     <td style={{ fontWeight: '600', color: '#64748b' }}>#{u.id}</td>
                     <td>
                       <div style={{ fontWeight: '600' }}>{u.nombre_completo}</div>
-                      <div style={{ fontSize: '0.775rem', color: 'var(--color-text-muted)' }}>{u.email}</div>
+                      <div style={{ fontSize: '0.775rem', color: 'var(--color-text-muted)' }}>
+                        <span style={{ fontWeight: '600', color: 'var(--color-primary)' }}>@{u.username}</span> • {u.email}
+                      </div>
                     </td>
                     <td>
                       <span className={`badge ${u.rol === 'ADMINISTRADOR' ? 'badge-info' : 'badge-success'}`}>
@@ -469,6 +511,31 @@ export const UsuariosAdmin = () => {
                     onChange={(e) => setCreateData({ ...createData, nombre_completo: e.target.value })}
                     required
                   />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">
+                    Nombre de Usuario <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Ej. daniel (mín. 3 caracteres)"
+                    value={createData.username}
+                    onChange={(e) =>
+                      setCreateData({
+                        ...createData,
+                        username: e.target.value.toLowerCase().replace(/\s+/g, ''),
+                      })
+                    }
+                    required
+                    minLength={3}
+                    maxLength={50}
+                    autoComplete="off"
+                  />
+                  <small style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                    Solo minúsculas, números, puntos o guiones bajos. Usado para iniciar sesión.
+                  </small>
                 </div>
 
                 <div className="form-group">
@@ -587,6 +654,27 @@ export const UsuariosAdmin = () => {
                     onChange={(e) => setEditData({ ...editData, nombre_completo: e.target.value })}
                     required
                   />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Nombre de Usuario</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={editData.username}
+                    onChange={(e) =>
+                      setEditData({
+                        ...editData,
+                        username: e.target.value.toLowerCase().replace(/\s+/g, ''),
+                      })
+                    }
+                    required
+                    minLength={3}
+                    maxLength={50}
+                  />
+                  <small style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                    Solo minúsculas, números, puntos o guiones bajos.
+                  </small>
                 </div>
 
                 <div className="form-group">

@@ -16,7 +16,7 @@ import io
 import re
 import datetime
 import zipfile
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Dict, List, Optional, Tuple, Any
 
 import openpyxl
@@ -214,15 +214,18 @@ class ExcelParserService:
                         col_paths[c] = " // ".join(tokens)
 
                 mapping: Dict[str, int] = {}
+                candidates_base: List[Tuple[int, int]] = []
+                candidates_igv: List[Tuple[int, int]] = []
+
                 for c, path in col_paths.items():
                     p = path.upper()
 
                     # Precisión 7: Ignorar estrictamente columnas de comprobantes modificados o referencias
-                    if any(x in p for x in ["REFERENCIA", "MODIFICA", "ORIGINAL"]):
+                    if any(x in p for x in ["REFERENCIA", "MODIFICA", "ORIGINAL", "VENCIMIENTO", "VMTO"]):
                         continue
 
                     # 1. Fecha de emisión
-                    if "FECHA" in p and "EMISION" in p and not any(x in p for x in ["DETRACCION", "VENCIMIENTO", "VMTO"]):
+                    if "FECHA" in p and "EMISION" in p and not any(x in p for x in ["DETRACCION"]):
                         mapping["fecha_emision"] = c
 
                     # 2. Tipo de comprobante (Tabla 10)
@@ -249,13 +252,72 @@ class ExcelParserService:
                     elif "PROVEEDOR" in p and any(x in p for x in ["APELLIDOS", "RAZON SOCIAL", "DENOMINACION", "NOMBRES"]):
                         mapping["razon_social"] = c
 
-                    # 8. Monto total
+                    # 8. Importe total original del Registro de Compras
                     elif ("IMPORTE" in p and "TOTAL" in p) or (p.endswith("TOTAL") and not any(x in p for x in ["BASE", "IGV", "ISC", "SUBDIARIO", "GENERAL", "ADQUISICIONES", "DETRACCION"])):
+                        mapping["importe_total"] = c
                         mapping["monto"] = c
 
+                    # 9. Otros tributos y cargos (identificar para aislar y NO sumar a SUNAT)
+                    elif "OTROS" in p and any(x in p for x in ["TRIBUTOS", "CARGOS"]):
+                        mapping["otros_tributos"] = c
+
+                    # 10. Tipo de cambio
+                    elif ("CAMBIO" in p and any(x in p for x in ["TIPO", "T.C", "TC"])) or p.strip() in ["TIPO DE CAMBIO", "TC", "T.C."]:
+                        mapping["tipo_cambio"] = c
+
+                    # 10.1 Valor de las adquisiciones no gravadas
+                    elif ("VALOR" in p and "ADQUISICIONES" in p and "NO" in p and "GRAVADAS" in p) and not any(x in p for x in ["BASE", "IMPONIBLE", "IGV", "DESTINADAS", "EXPORTACI"]):
+                        mapping["adquisiciones_no_gravadas"] = c
+
+                    # 11. Base Imponible - Grupo 1: Operaciones gravadas y/o de exportación
+                    if ("BASE" in p or "IMPONIBLE" in p) and not any(x in p for x in ["NO GRAV", "IGV", "ISC", "TOTAL", "DETRACCION"]):
+                        score_b = 0
+                        # Grupo 1 obligatorio: Adquisiciones gravadas destinadas a operaciones gravadas y/o de exportación
+                        if any(x in p for x in ["DESTINADAS A OPERACIONES", "OPERACIONES GRAVADAS", "EXPORTACI"]):
+                            score_b += 20
+                        if "BASE" in p and "IMPONIBLE" in p:
+                            score_b += 10
+                        elif "BASE" in p or "IMPONIBLE" in p:
+                            score_b += 5
+                        candidates_base.append((score_b, c))
+
+                    # 12. IGV - Grupo 1: Operaciones gravadas y/o de exportación
+                    if any(x in p for x in ["IGV", "I.G.V", "IMPUESTO GENERAL"]) and not any(x in p for x in ["NO GRAV", "BASE", "IMPONIBLE", "ISC", "TOTAL", "TASA", "DETRACCION"]):
+                        score_i = 0
+                        # Grupo 1 obligatorio
+                        if any(x in p for x in ["DESTINADAS A OPERACIONES", "OPERACIONES GRAVADAS", "EXPORTACI"]):
+                            score_i += 20
+                        if "IGV" in p or "I.G.V" in p:
+                            score_i += 10
+                        elif "IMPUESTO GENERAL" in p:
+                            score_i += 5
+                        candidates_igv.append((score_i, c))
+
+                if candidates_base:
+                    candidates_base.sort(key=lambda x: x[0], reverse=True)
+                    mapping["base_imponible"] = candidates_base[0][1]
+
+                if candidates_igv:
+                    candidates_igv.sort(key=lambda x: x[0], reverse=True)
+                    mapping["igv"] = candidates_igv[0][1]
+
                 # Evaluar presencia de columnas críticas
-                req_fields = ["fecha_emision", "cod_comp", "numero_serie", "numero", "num_ruc", "monto"]
-                score = sum(1 for f in req_fields if f in mapping)
+                score = 0
+                for f in ["fecha_emision", "cod_comp", "numero_serie", "numero", "num_ruc"]:
+                    if f in mapping:
+                        score += 2
+                if "base_imponible" in mapping and "igv" in mapping:
+                    score += 4
+                elif "importe_total" in mapping or "monto" in mapping:
+                    score += 2
+                if "razon_social" in mapping:
+                    score += 1
+                if "tipo_doc_identidad" in mapping:
+                    score += 1
+                if "tipo_cambio" in mapping:
+                    score += 1
+                if "adquisiciones_no_gravadas" in mapping:
+                    score += 1
 
                 # Priorizar coincidencia completa con mayor detalle y menor grosor superfluo
                 span = r_end - r_start
@@ -357,6 +419,25 @@ class ExcelParserService:
         return None, f"Formato de fecha no reconocido: '{texto}'. Se esperaba DD/MM/YYYY."
 
     @classmethod
+    def parse_decimal_monetario(
+        cls, valor: Any, permitir_vacio: bool = True
+    ) -> Tuple[Optional[Decimal], Optional[str]]:
+        """
+        Convierte una celda a Decimal con redondeo a 2 decimales sin usar float.
+        Si permitir_vacio es True y el valor es None o vacío, retorna (Decimal('0.00'), None).
+        """
+        if valor is None:
+            return (Decimal("0.00"), None) if permitir_vacio else (None, "Valor monetario vacío.")
+        texto = str(valor).strip().replace(",", "")
+        if not texto:
+            return (Decimal("0.00"), None) if permitir_vacio else (None, "Valor monetario vacío.")
+        try:
+            val = Decimal(texto).quantize(Decimal("0.01"))
+            return val, None
+        except (InvalidOperation, ValueError):
+            return None, f"Valor monetario numérico inválido: '{texto}'."
+
+    @classmethod
     def normalizar_monto(cls, valor: Any) -> Tuple[Optional[Decimal], Optional[Decimal], Optional[str]]:
         """
         Normaliza el monto contable respetando la Precisión 3:
@@ -417,7 +498,12 @@ class ExcelParserService:
             "tipo_doc_identidad": f"Columna {mapping.get('tipo_doc_identidad')}" if "tipo_doc_identidad" in mapping else "No detectada",
             "num_ruc": f"Columna {mapping.get('num_ruc')}",
             "razon_social": f"Columna {mapping.get('razon_social')}" if "razon_social" in mapping else "No detectada",
-            "monto": f"Columna {mapping.get('monto')}",
+            "base_imponible": f"Columna {mapping.get('base_imponible')}" if "base_imponible" in mapping else "No detectada",
+            "igv": f"Columna {mapping.get('igv')}" if "igv" in mapping else "No detectada",
+            "adquisiciones_no_gravadas": f"Columna {mapping.get('adquisiciones_no_gravadas')}" if "adquisiciones_no_gravadas" in mapping else "No detectada",
+            "tipo_cambio": f"Columna {mapping.get('tipo_cambio')}" if "tipo_cambio" in mapping else "No detectada",
+            "importe_total": f"Columna {mapping.get('importe_total') or mapping.get('monto')}" if ("importe_total" in mapping or "monto" in mapping) else "No detectada",
+            "monto": f"Columna {mapping.get('monto') or mapping.get('importe_total')}",
         }
 
         diagnostico = DiagnosticoImportacion(
@@ -456,7 +542,12 @@ class ExcelParserService:
             raw_tipo_doc = sheet.cell(r, mapping["tipo_doc_identidad"]).value if "tipo_doc_identidad" in mapping else None
             raw_ruc = sheet.cell(r, mapping["num_ruc"]).value if "num_ruc" in mapping else None
             raw_razon = sheet.cell(r, mapping["razon_social"]).value if "razon_social" in mapping else None
-            raw_monto = sheet.cell(r, mapping["monto"]).value if "monto" in mapping else None
+            raw_base = sheet.cell(r, mapping["base_imponible"]).value if "base_imponible" in mapping else None
+            raw_igv = sheet.cell(r, mapping["igv"]).value if "igv" in mapping else None
+            raw_no_gravadas = sheet.cell(r, mapping["adquisiciones_no_gravadas"]).value if "adquisiciones_no_gravadas" in mapping else None
+            raw_tc = sheet.cell(r, mapping["tipo_cambio"]).value if "tipo_cambio" in mapping else None
+            raw_total = sheet.cell(r, mapping.get("importe_total") or mapping.get("monto")).value if ("importe_total" in mapping or "monto" in mapping) else None
+            raw_otros = sheet.cell(r, mapping["otros_tributos"]).value if "otros_tributos" in mapping else None
 
             # 1. Normalización de Tipo de Documento de Identidad (Precisión 4)
             tipo_doc_clean = cls.normalizar_celda_texto(raw_tipo_doc)
@@ -508,10 +599,106 @@ class ExcelParserService:
             if err_fecha:
                 errores_fila.append(err_fecha)
 
-            # 5. Normalización de Montos (Precisión 3: Decimal original y valor absoluto)
-            monto_orig, monto_norm, err_monto = cls.normalizar_monto(raw_monto)
-            if err_monto:
-                errores_fila.append(err_monto)
+            # 5. Normalización y Cálculo de Montos (MONTO SUNAT = (BASE IMPONIBLE + IGV + NO GRAVADAS) [/ TIPO CAMBIO])
+            base_imponible_dec: Optional[Decimal] = None
+            igv_dec: Optional[Decimal] = None
+            monto_base_igv: Optional[Decimal] = None
+            valor_adquisiciones_no_gravadas: Optional[Decimal] = None
+            monto_calculado_original: Optional[Decimal] = None
+            tipo_cambio_dec: Optional[Decimal] = None
+            monto_convertido_dec: Optional[Decimal] = None
+            importe_total_excel: Optional[Decimal] = None
+            otros_tributos_dec: Optional[Decimal] = None
+            monto_orig: Optional[Decimal] = None
+            monto_norm: Optional[Decimal] = None
+
+            # Extracción y validación segura del Tipo de Cambio
+            if raw_tc is not None and str(raw_tc).strip():
+                tc_str = str(raw_tc).strip().replace(",", "")
+                try:
+                    val_tc = Decimal(tc_str)
+                    if val_tc > Decimal("0.00"):
+                        tipo_cambio_dec = val_tc
+                    elif val_tc == Decimal("0.00"):
+                        tipo_cambio_dec = Decimal("0.00")
+                except (InvalidOperation, ValueError):
+                    errores_fila.append(f"Tipo de cambio inválido o no numérico: '{raw_tc}'.")
+
+            if "base_imponible" in mapping and "igv" in mapping:
+                b_str = str(raw_base).strip() if raw_base is not None else ""
+                i_str = str(raw_igv).strip() if raw_igv is not None else ""
+                t_str = str(raw_total).strip() if raw_total is not None else ""
+
+                if not b_str and not i_str and not t_str:
+                    errores_fila.append("Montos vacíos: Base Imponible e IGV no encontrados.")
+                else:
+                    base_imponible_dec, err_b = cls.parse_decimal_monetario(raw_base, permitir_vacio=True)
+                    igv_dec, err_i = cls.parse_decimal_monetario(raw_igv, permitir_vacio=True)
+
+                    if err_b:
+                        errores_fila.append(f"Base Imponible inválida: {err_b}")
+                    if err_i:
+                        errores_fila.append(f"IGV inválido: {err_i}")
+
+                    # Extraer Valor de las Adquisiciones No Gravadas de la MISMA FILA
+                    no_gravadas_calc = Decimal("0.00")
+                    err_ng = None
+                    if raw_no_gravadas is not None and str(raw_no_gravadas).strip():
+                        val_ng, err_ng = cls.parse_decimal_monetario(raw_no_gravadas, permitir_vacio=False)
+                        if err_ng:
+                            errores_fila.append(f"Valor de Adquisiciones No Gravadas inválido: {err_ng}")
+                        else:
+                            valor_adquisiciones_no_gravadas = val_ng
+                            no_gravadas_calc = val_ng
+                    else:
+                        valor_adquisiciones_no_gravadas = None
+                        no_gravadas_calc = Decimal("0.00")
+
+                    # Extraer Importe Total del Excel si existe la columna (para visualización e historial)
+                    if t_str:
+                        importe_total_excel, _ = cls.parse_decimal_monetario(raw_total, permitir_vacio=False)
+
+                    # Extraer Otros tributos y cargos si existe la columna (NO se suma al monto SUNAT)
+                    if raw_otros is not None and str(raw_otros).strip():
+                        otros_tributos_dec, _ = cls.parse_decimal_monetario(raw_otros, permitir_vacio=False)
+
+                    if base_imponible_dec is not None and igv_dec is not None and not err_b and not err_i and not err_ng:
+                        # REGLA 1: monto_base_igv = BASE IMPONIBLE + IGV (Decimal estricto)
+                        monto_base_igv = (base_imponible_dec + igv_dec).quantize(Decimal("0.01"))
+
+                        # REGLA 2: monto_calculado_original = BASE + IGV + NO GRAVADAS
+                        monto_calculado_original = (monto_base_igv + no_gravadas_calc).quantize(Decimal("0.01"))
+
+                        # REGLA 3: APLICAR TIPO DE CAMBIO SI EXISTE Y ES > 0
+                        if tipo_cambio_dec is not None and tipo_cambio_dec > Decimal("0.00"):
+                            # monto_convertido = (monto_calculado_original / tipo_cambio) con redondeo HALF_UP a 2 decimales
+                            monto_convertido_dec = (monto_calculado_original / tipo_cambio_dec).quantize(
+                                Decimal("0.01"), rounding=ROUND_HALF_UP
+                            )
+                            # Para SUNAT se envía el valor absoluto positivo
+                            monto_norm = abs(monto_convertido_dec)
+                            # Para trazabilidad contable original se conserva el signo (ej. notas de crédito negativas)
+                            monto_orig = monto_convertido_dec
+                        else:
+                            # Sin tipo de cambio o tipo de cambio <= 0: no dividir
+                            monto_convertido_dec = None
+                            monto_norm = abs(monto_calculado_original)
+                            monto_orig = monto_calculado_original
+            else:
+                # Fallback para archivos sin columnas multinivel de Base Imponible e IGV (ej. condensados)
+                monto_orig, monto_norm, err_monto = cls.normalizar_monto(raw_total)
+                if err_monto:
+                    errores_fila.append(err_monto)
+                else:
+                    monto_base_igv = monto_orig
+                    monto_calculado_original = monto_orig
+                    importe_total_excel = monto_orig
+                    if tipo_cambio_dec is not None and tipo_cambio_dec > Decimal("0.00"):
+                        monto_convertido_dec = (monto_calculado_original / tipo_cambio_dec).quantize(
+                            Decimal("0.01"), rounding=ROUND_HALF_UP
+                        )
+                        monto_norm = abs(monto_convertido_dec)
+                        monto_orig = monto_convertido_dec
 
             razon_social_clean = cls.normalizar_celda_texto(raw_razon) or None
 
@@ -562,6 +749,15 @@ class ExcelParserService:
                     estado_archivo=estado_archivo,
                     errores=errores_fila,
                     es_seleccionable=es_seleccionable,
+                    base_imponible=base_imponible_dec,
+                    igv=igv_dec,
+                    monto_base_igv=monto_base_igv,
+                    valor_adquisiciones_no_gravadas=valor_adquisiciones_no_gravadas,
+                    monto_calculado_original=monto_calculado_original,
+                    tipo_cambio=tipo_cambio_dec,
+                    monto_convertido=monto_convertido_dec,
+                    importe_total_excel=importe_total_excel,
+                    otros_tributos=otros_tributos_dec,
                 )
             )
 
